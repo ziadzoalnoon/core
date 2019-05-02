@@ -261,12 +261,12 @@ export class Connection implements TransactionPool.IConnection {
             const senderPublicKey: string = data.senderPublicKey;
             const transactionHandler: Handlers.TransactionHandler = Handlers.Registry.get(transaction.type);
 
-            const senderWallet: State.IWallet = this.walletManager.has(senderPublicKey)
-                ? this.walletManager.findByPublicKey(senderPublicKey)
+            const senderWallet: State.IWallet = this.walletManager.getRepository().has(senderPublicKey)
+                ? this.walletManager.getRepository().findByPublicKey(senderPublicKey)
                 : undefined;
 
-            const recipientWallet: State.IWallet = this.walletManager.has(data.recipientId)
-                ? this.walletManager.findByAddress(data.recipientId)
+            const recipientWallet: State.IWallet = this.walletManager.getRepository().has(data.recipientId)
+                ? this.walletManager.getRepository().findByAddress(data.recipientId)
                 : undefined;
 
             if (recipientWallet) {
@@ -305,8 +305,10 @@ export class Connection implements TransactionPool.IConnection {
         }
 
         // if delegate in poll wallet manager - apply rewards and fees
-        if (this.walletManager.has(block.data.generatorPublicKey)) {
-            const delegateWallet: State.IWallet = this.walletManager.findByPublicKey(block.data.generatorPublicKey);
+        if (this.walletManager.getRepository().has(block.data.generatorPublicKey)) {
+            const delegateWallet: State.IWallet = this.walletManager
+                .getRepository()
+                .findByPublicKey(block.data.generatorPublicKey);
 
             delegateWallet.balance = delegateWallet.balance.plus(block.data.reward.plus(block.data.totalFee));
         }
@@ -317,7 +319,7 @@ export class Connection implements TransactionPool.IConnection {
     }
 
     public async buildWallets(): Promise<void> {
-        this.walletManager.reset();
+        this.walletManager.getRepository().reset();
 
         const transactionIds: string[] = await this.getTransactionIdsForForging(0, this.getPoolSize());
 
@@ -332,7 +334,9 @@ export class Connection implements TransactionPool.IConnection {
                 return;
             }
 
-            const senderWallet: State.IWallet = this.walletManager.findByPublicKey(transaction.data.senderPublicKey);
+            const senderWallet: State.IWallet = this.walletManager
+                .getRepository()
+                .findByPublicKey(transaction.data.senderPublicKey);
 
             // TODO: rework error handling
             try {

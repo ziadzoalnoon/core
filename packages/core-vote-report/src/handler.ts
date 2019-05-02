@@ -18,6 +18,7 @@ const formatDelegates = (
 
     return delegates.map((delegate: State.IWallet) => {
         const filteredVoters: State.IWallet[] = databaseService.walletManager
+            .getRepository()
             .allByPublicKey()
             .filter(wallet => wallet.vote === delegate.publicKey && wallet.balance.gt(0.1 * 1e8));
 
@@ -61,6 +62,7 @@ export const handler = (request, h) => {
     const supply: number = supplyCalculator.calculate(lastBlock.data.height);
 
     const allByUsername: State.IWallet[] = databaseService.walletManager
+        .getRepository()
         .allByUsername()
         .map((delegate, index) => {
             delegate.rate = delegate.rate || index + 1;
@@ -75,6 +77,7 @@ export const handler = (request, h) => {
     );
 
     const voters: State.IWallet[] = databaseService.walletManager
+        .getRepository()
         .allByPublicKey()
         .filter(wallet => wallet.vote && (wallet.balance as Utils.BigNumber).gt(0.1 * 1e8));
 

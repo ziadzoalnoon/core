@@ -17,7 +17,9 @@ export abstract class TransactionHandler implements ITransactionHandler {
     // TODO: merge with canBeApplied ?
     // just a quick hack to get multi sig working
     public verify(transaction: Interfaces.ITransaction, walletManager: State.IWalletManager): boolean {
-        const senderWallet: State.IWallet = walletManager.findByPublicKey(transaction.data.senderPublicKey);
+        const senderWallet: State.IWallet = walletManager
+            .getRepository()
+            .findByPublicKey(transaction.data.senderPublicKey);
 
         if (senderWallet.multisignature) {
             transaction.isVerified = senderWallet.verifySignatures(transaction.data);
@@ -56,9 +58,9 @@ export abstract class TransactionHandler implements ITransactionHandler {
 
         if (wallet.secondPublicKey) {
             // Ensure the database wallet already has a 2nd signature, in case we checked a pool wallet.
-            const databaseWallet: State.IWallet = databaseWalletManager.findByPublicKey(
-                transaction.data.senderPublicKey,
-            );
+            const databaseWallet: State.IWallet = databaseWalletManager
+                .getRepository()
+                .findByPublicKey(transaction.data.senderPublicKey);
 
             if (!databaseWallet.secondPublicKey) {
                 throw new UnexpectedSecondSignatureError();
@@ -77,9 +79,9 @@ export abstract class TransactionHandler implements ITransactionHandler {
 
         if (wallet.multisignature) {
             // Ensure the database wallet already has a multi signature, in case we checked a pool wallet.
-            const databaseWallet: State.IWallet = databaseWalletManager.findByPublicKey(
-                transaction.data.senderPublicKey,
-            );
+            const databaseWallet: State.IWallet = databaseWalletManager
+                .getRepository()
+                .findByPublicKey(transaction.data.senderPublicKey);
 
             if (!databaseWallet.multisignature) {
                 throw new UnexpectedMultiSignatureError();
@@ -105,12 +107,12 @@ export abstract class TransactionHandler implements ITransactionHandler {
     }
 
     protected applyToSender(transaction: Interfaces.ITransaction, walletManager: State.IWalletManager): void {
-        const sender: State.IWallet = walletManager.findByPublicKey(transaction.data.senderPublicKey);
+        const sender: State.IWallet = walletManager.getRepository().findByPublicKey(transaction.data.senderPublicKey);
         sender.balance = sender.balance.minus(transaction.data.amount).minus(transaction.data.fee);
     }
 
     protected revertForSender(transaction: Interfaces.ITransaction, walletManager: State.IWalletManager): void {
-        const sender: State.IWallet = walletManager.findByPublicKey(transaction.data.senderPublicKey);
+        const sender: State.IWallet = walletManager.getRepository().findByPublicKey(transaction.data.senderPublicKey);
         sender.balance = sender.balance.plus(transaction.data.amount).plus(transaction.data.fee);
     }
 

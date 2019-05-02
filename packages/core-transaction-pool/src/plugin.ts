@@ -1,4 +1,5 @@
 import { Container, Logger, TransactionPool } from "@arkecosystem/core-interfaces";
+import { Wallets } from "@arkecosystem/core-state";
 import { Connection } from "./connection";
 import { defaults } from "./defaults";
 import { ConnectionManager } from "./manager";
@@ -16,7 +17,7 @@ export const plugin: Container.IPluginDescriptor = {
         return new ConnectionManager().createConnection(
             new Connection({
                 options,
-                walletManager: new WalletManager(),
+                walletManager: new WalletManager(new Wallets.Repository()),
                 memory: new Memory(),
                 storage: new Storage(),
             }),

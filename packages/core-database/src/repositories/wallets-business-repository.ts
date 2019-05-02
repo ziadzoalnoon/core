@@ -7,7 +7,9 @@ export class WalletsBusinessRepository implements Database.IWalletsBusinessRepos
     public constructor(private readonly databaseServiceProvider: () => Database.IDatabaseService) {}
 
     public all(): State.IWallet[] {
-        return this.databaseServiceProvider().walletManager.allByAddress();
+        return this.databaseServiceProvider()
+            .walletManager.getRepository()
+            .allByAddress();
     }
 
     public findAll(params: Database.IParameters = {}): Database.IWalletsPaginated {

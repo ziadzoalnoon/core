@@ -22,7 +22,7 @@ export class DelegateRegistrationTransactionHandler extends TransactionHandler {
     ): boolean {
         const { data }: Interfaces.ITransaction = transaction;
 
-        if (databaseWalletManager.findByPublicKey(data.senderPublicKey).multisignature) {
+        if (databaseWalletManager.getRepository().findByPublicKey(data.senderPublicKey).multisignature) {
             throw new NotSupportedForMultiSignatureWalletError();
         }
 
@@ -35,7 +35,7 @@ export class DelegateRegistrationTransactionHandler extends TransactionHandler {
             throw new WalletUsernameNotEmptyError();
         }
 
-        if (databaseWalletManager.findByUsername(username)) {
+        if (databaseWalletManager.getRepository().findByUsername(username)) {
             throw new WalletUsernameAlreadyRegisteredError(username);
         }
 
@@ -87,18 +87,18 @@ export class DelegateRegistrationTransactionHandler extends TransactionHandler {
     protected applyToSender(transaction: Interfaces.ITransaction, walletManager: State.IWalletManager): void {
         super.applyToSender(transaction, walletManager);
 
-        const sender: State.IWallet = walletManager.findByPublicKey(transaction.data.senderPublicKey);
+        const sender: State.IWallet = walletManager.getRepository().findByPublicKey(transaction.data.senderPublicKey);
         sender.username = transaction.data.asset.delegate.username;
 
-        walletManager.reindex(sender);
+        walletManager.getRepository().index(sender);
     }
 
     protected revertForSender(transaction: Interfaces.ITransaction, walletManager: State.IWalletManager): void {
         super.revertForSender(transaction, walletManager);
 
-        const sender: State.IWallet = walletManager.findByPublicKey(transaction.data.senderPublicKey);
+        const sender: State.IWallet = walletManager.getRepository().findByPublicKey(transaction.data.senderPublicKey);
 
-        walletManager.forgetByUsername(sender.username);
+        walletManager.getRepository().forgetByUsername(sender.username);
         sender.username = undefined;
     }
 

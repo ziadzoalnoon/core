@@ -105,13 +105,13 @@ export interface IDatabaseService {
 
     updateDelegateStats(delegates: IDelegateWallet[]): void;
 
+    applyBlock(block: Interfaces.IBlock): void;
+
+    revertBlock(block: Interfaces.IBlock): void;
+
     applyRound(height: number): Promise<void>;
 
     revertRound(height: number): Promise<void>;
-
-    applyBlock(block: Interfaces.IBlock): Promise<void>;
-
-    revertBlock(block: Interfaces.IBlock): Promise<void>;
 
     verifyTransaction(transaction: Interfaces.ITransaction): Promise<boolean>;
 

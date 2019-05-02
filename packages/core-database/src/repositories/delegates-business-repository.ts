@@ -10,7 +10,9 @@ export class DelegatesBusinessRepository implements Database.IDelegatesBusinessR
     public constructor(private readonly databaseServiceProvider: () => Database.IDatabaseService) {}
 
     public getLocalDelegates(params: Database.IParameters = {}): State.IWallet[] {
-        let delegates = this.databaseServiceProvider().walletManager.allByUsername();
+        let delegates = this.databaseServiceProvider()
+            .walletManager.getRepository()
+            .allByUsername();
 
         const manipulators = {
             approval: delegateCalculator.calculateApproval,

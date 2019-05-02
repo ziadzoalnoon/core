@@ -34,7 +34,7 @@ export class TransactionsRepository extends Repository implements IRepository {
         }
 
         if (parameters.ownerId) {
-            const owner = this.databaseService.walletManager.findByAddress(parameters.ownerId);
+            const owner = this.databaseService.walletManager.getRepository().findByAddress(parameters.ownerId);
 
             selectQuery.and(this.query.sender_public_key.equals(owner.publicKey));
             selectQuery.or(this.query.recipient_id.equals(owner.address));
@@ -394,8 +394,8 @@ export class TransactionsRepository extends Repository implements IRepository {
      * @return {String}
      */
     public __publicKeyFromAddress(senderId): string {
-        if (this.databaseService.walletManager.has(senderId)) {
-            return this.databaseService.walletManager.findByAddress(senderId).publicKey;
+        if (this.databaseService.walletManager.getRepository().has(senderId)) {
+            return this.databaseService.walletManager.getRepository().findByAddress(senderId).publicKey;
         }
 
         return undefined;

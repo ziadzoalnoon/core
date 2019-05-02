@@ -28,7 +28,9 @@ export class VoteTransactionHandler extends TransactionHandler {
             }
         }
 
-        if (!databaseWalletManager.isDelegate(vote.slice(1))) {
+        const delegateWallet: State.IWallet = databaseWalletManager.getRepository().findByPublicKey(vote.slice(1));
+
+        if (!delegateWallet || !delegateWallet.username) {
             throw new VotedForNonDelegateError(vote);
         }
 
@@ -59,7 +61,7 @@ export class VoteTransactionHandler extends TransactionHandler {
     protected applyToSender(transaction: Interfaces.ITransaction, walletManager: State.IWalletManager): void {
         super.applyToSender(transaction, walletManager);
 
-        const sender: State.IWallet = walletManager.findByPublicKey(transaction.data.senderPublicKey);
+        const sender: State.IWallet = walletManager.getRepository().findByPublicKey(transaction.data.senderPublicKey);
         const vote: string = transaction.data.asset.votes[0];
 
         if (vote.startsWith("+")) {
@@ -72,7 +74,7 @@ export class VoteTransactionHandler extends TransactionHandler {
     protected revertForSender(transaction: Interfaces.ITransaction, walletManager: State.IWalletManager): void {
         super.revertForSender(transaction, walletManager);
 
-        const sender = walletManager.findByPublicKey(transaction.data.senderPublicKey);
+        const sender = walletManager.getRepository().findByPublicKey(transaction.data.senderPublicKey);
         const vote: string = transaction.data.asset.votes[0];
 
         if (vote.startsWith("+")) {

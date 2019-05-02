@@ -82,6 +82,15 @@ export class DatabaseService implements Database.IDatabaseService {
         this.emitter.emit("block.applied", block.data);
     }
 
+    public async revertBlock(block: Interfaces.IBlock): Promise<void> {
+        await this.revertRound(block.data.height);
+        await this.walletManager.revertBlock(block);
+
+        assert(this.blocksInCurrentRound.pop().data.id === block.data.id);
+
+        this.emitter.emit("block.reverted", block.data);
+    }
+
     public async applyRound(height: number): Promise<void> {
         const nextHeight: number = height === 1 ? 1 : height + 1;
 
@@ -125,8 +134,26 @@ export class DatabaseService implements Database.IDatabaseService {
         }
     }
 
+    public async revertRound(height: number): Promise<void> {
+        const roundInfo: Shared.IRoundInfo = roundCalculator.calculateRound(height);
+        const { round, nextRound, maxDelegates } = roundInfo;
+
+        if (nextRound === round + 1 && height >= maxDelegates) {
+            this.logger.info(`Back to previous round: ${round.toLocaleString()}`);
+
+            this.blocksInCurrentRound = await this.getBlocksForRound(roundInfo);
+
+            await this.setForgingDelegatesOfRound(
+                roundInfo,
+                await this.calcPreviousActiveDelegates(roundInfo, this.blocksInCurrentRound),
+            );
+
+            await this.deleteRound(nextRound);
+        }
+    }
+
     public async buildWallets(): Promise<void> {
-        this.walletManager.reset();
+        this.walletManager.getRepository().reset();
 
         await this.connection.buildWallets();
     }
@@ -183,7 +210,7 @@ export class DatabaseService implements Database.IDatabaseService {
 
         const forgingDelegates: State.IDelegateWallet[] = delegates.map(delegate => {
             delegate.round = +delegate.round;
-            delegate.username = this.walletManager.findByPublicKey(delegate.publicKey).username;
+            delegate.username = this.walletManager.getRepository().findByPublicKey(delegate.publicKey).username;
             return delegate;
         });
 
@@ -407,33 +434,6 @@ export class DatabaseService implements Database.IDatabaseService {
         }
     }
 
-    public async revertBlock(block: Interfaces.IBlock): Promise<void> {
-        await this.revertRound(block.data.height);
-        await this.walletManager.revertBlock(block);
-
-        assert(this.blocksInCurrentRound.pop().data.id === block.data.id);
-
-        this.emitter.emit("block.reverted", block.data);
-    }
-
-    public async revertRound(height: number): Promise<void> {
-        const roundInfo: Shared.IRoundInfo = roundCalculator.calculateRound(height);
-        const { round, nextRound, maxDelegates } = roundInfo;
-
-        if (nextRound === round + 1 && height >= maxDelegates) {
-            this.logger.info(`Back to previous round: ${round.toLocaleString()}`);
-
-            this.blocksInCurrentRound = await this.getBlocksForRound(roundInfo);
-
-            await this.setForgingDelegatesOfRound(
-                roundInfo,
-                await this.calcPreviousActiveDelegates(roundInfo, this.blocksInCurrentRound),
-            );
-
-            await this.deleteRound(nextRound);
-        }
-    }
-
     public async saveBlock(block: Interfaces.IBlock): Promise<void> {
         await this.connection.saveBlock(block);
     }
@@ -468,7 +468,9 @@ export class DatabaseService implements Database.IDatabaseService {
                 );
 
                 if (producedBlocks.length === 0) {
-                    const wallet: State.IWallet = this.walletManager.findByPublicKey(delegate.publicKey);
+                    const wallet: State.IWallet = this.walletManager
+                        .getRepository()
+                        .findByPublicKey(delegate.publicKey);
 
                     this.logger.debug(`Delegate ${wallet.username} (${wallet.publicKey}) just missed a block.`);
 
@@ -554,18 +556,19 @@ export class DatabaseService implements Database.IDatabaseService {
     public async verifyTransaction(transaction: Interfaces.ITransaction): Promise<boolean> {
         const senderId: string = Identities.Address.fromPublicKey(transaction.data.senderPublicKey);
 
-        const sender: State.IWallet = this.walletManager.findByAddress(senderId);
+        const sender: State.IWallet = this.walletManager.getRepository().findByAddress(senderId);
         const transactionHandler: Handlers.TransactionHandler = Handlers.Registry.get(transaction.type);
 
         if (!sender.publicKey) {
             sender.publicKey = transaction.data.senderPublicKey;
 
-            this.walletManager.reindex(sender);
+            this.walletManager.getRepository().index(sender);
         }
 
         const dbTransaction = await this.getTransaction(transaction.data.id);
 
         try {
+            // @TODO: get rid of the 3rd argument
             return transactionHandler.canBeApplied(transaction, sender, this.walletManager) && !dbTransaction;
         } catch {
             return false;

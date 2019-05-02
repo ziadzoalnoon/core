@@ -35,9 +35,13 @@ export class IntegrityVerifier {
         await this.buildMultiSignatures();
 
         this.logger.info(
-            `Integrity verified! Wallets in memory: ${Object.keys(this.walletManager.allByAddress()).length}`,
+            `Integrity verified! Wallets in memory: ${
+                Object.keys(this.walletManager.getRepository().allByAddress()).length
+            }`,
         );
-        this.logger.info(`Number of registered delegates: ${Object.keys(this.walletManager.allByUsername()).length}`);
+        this.logger.info(
+            `Number of registered delegates: ${Object.keys(this.walletManager.getRepository().allByUsername()).length}`,
+        );
 
         this.verifyWalletsConsistency();
     }
@@ -46,7 +50,7 @@ export class IntegrityVerifier {
         const transactions = await this.query.many(queries.integrityVerifier.receivedTransactions);
 
         for (const transaction of transactions) {
-            const wallet = this.walletManager.findByAddress(transaction.recipientId);
+            const wallet = this.walletManager.getRepository().findByAddress(transaction.recipientId);
 
             wallet
                 ? (wallet.balance = Utils.BigNumber.make(transaction.amount))
@@ -58,7 +62,7 @@ export class IntegrityVerifier {
         const blocks = await this.query.many(queries.integrityVerifier.blockRewards);
 
         for (const block of blocks) {
-            const wallet = this.walletManager.findByPublicKey(block.generatorPublicKey);
+            const wallet = this.walletManager.getRepository().findByPublicKey(block.generatorPublicKey);
             wallet.balance = wallet.balance.plus(block.reward);
         }
     }
@@ -67,7 +71,7 @@ export class IntegrityVerifier {
         const blocks = await this.query.many(queries.integrityVerifier.lastForgedBlocks);
 
         for (const block of blocks) {
-            const wallet = this.walletManager.findByPublicKey(block.generatorPublicKey);
+            const wallet = this.walletManager.getRepository().findByPublicKey(block.generatorPublicKey);
             wallet.lastBlock = block;
         }
     }
@@ -76,7 +80,7 @@ export class IntegrityVerifier {
         const transactions = await this.query.many(queries.integrityVerifier.sentTransactions);
 
         for (const transaction of transactions) {
-            const wallet = this.walletManager.findByPublicKey(transaction.senderPublicKey);
+            const wallet = this.walletManager.getRepository().findByPublicKey(transaction.senderPublicKey);
             wallet.balance = wallet.balance.minus(transaction.amount).minus(transaction.fee);
 
             if (wallet.balance.isLessThan(0) && !this.isGenesis(wallet)) {
@@ -97,7 +101,7 @@ export class IntegrityVerifier {
         const transactions = await this.query.manyOrNone(queries.integrityVerifier.secondSignatures);
 
         for (const transaction of transactions) {
-            const wallet = this.walletManager.findByPublicKey(transaction.senderPublicKey);
+            const wallet = this.walletManager.getRepository().findByPublicKey(transaction.senderPublicKey);
             wallet.secondPublicKey = transaction.asset.signature.publicKey;
         }
     }
@@ -106,7 +110,7 @@ export class IntegrityVerifier {
         const transactions = await this.query.manyOrNone(queries.integrityVerifier.votes);
 
         for (const transaction of transactions) {
-            const wallet = this.walletManager.findByPublicKey(transaction.senderPublicKey);
+            const wallet = this.walletManager.getRepository().findByPublicKey(transaction.senderPublicKey);
 
             if (!wallet.voted) {
                 const vote = transaction.asset.votes[0];
@@ -130,28 +134,28 @@ export class IntegrityVerifier {
         const transactions = await this.query.manyOrNone(queries.integrityVerifier.delegates);
 
         transactions.forEach(transaction => {
-            const wallet = this.walletManager.findByPublicKey(transaction.senderPublicKey);
+            const wallet = this.walletManager.getRepository().findByPublicKey(transaction.senderPublicKey);
             wallet.username = transaction.asset.delegate.username;
-            this.walletManager.reindex(wallet);
+            this.walletManager.getRepository().index(wallet);
         });
 
         // Forged Blocks...
         const forgedBlocks = await this.query.manyOrNone(queries.integrityVerifier.delegatesForgedBlocks);
         forgedBlocks.forEach(block => {
-            const wallet = this.walletManager.findByPublicKey(block.generatorPublicKey);
+            const wallet = this.walletManager.getRepository().findByPublicKey(block.generatorPublicKey);
             wallet.forgedFees = wallet.forgedFees.plus(block.totalFees);
             wallet.forgedRewards = wallet.forgedRewards.plus(block.totalRewards);
             wallet.producedBlocks = +block.totalProduced;
         });
 
-        this.walletManager.buildDelegateRanking(this.walletManager.allByUsername());
+        this.walletManager.buildDelegateRanking(this.walletManager.getRepository().allByUsername());
     }
 
     private async buildMultiSignatures(): Promise<void> {
         const transactions = await this.query.manyOrNone(queries.integrityVerifier.multiSignatures);
 
         for (const transaction of transactions) {
-            const wallet = this.walletManager.findByPublicKey(transaction.senderPublicKey);
+            const wallet = this.walletManager.getRepository().findByPublicKey(transaction.senderPublicKey);
             if (!wallet.multisignature) {
                 if (transaction.version === 1) {
                     wallet.multisignature = transaction.asset.multisignature || transaction.asset.multiSignatureLegacy;
@@ -165,7 +169,7 @@ export class IntegrityVerifier {
     }
 
     private verifyWalletsConsistency(): void {
-        for (const wallet of this.walletManager.allByAddress()) {
+        for (const wallet of this.walletManager.getRepository().allByAddress()) {
             if (wallet.balance.isLessThan(0) && !this.isGenesis(wallet)) {
                 this.logger.warn(`Wallet '${wallet.address}' has a negative balance of '${wallet.balance}'`);
 

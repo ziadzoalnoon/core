@@ -40,12 +40,12 @@ export class TransferTransactionHandler extends TransactionHandler {
     }
 
     protected applyToRecipient(transaction: Interfaces.ITransaction, walletManager: State.IWalletManager): void {
-        const recipient: State.IWallet = walletManager.findByAddress(transaction.data.recipientId);
+        const recipient: State.IWallet = walletManager.getRepository().findByAddress(transaction.data.recipientId);
         recipient.balance = recipient.balance.plus(transaction.data.amount);
     }
 
     protected revertForRecipient(transaction: Interfaces.ITransaction, walletManager: State.IWalletManager): void {
-        const recipient: State.IWallet = walletManager.findByAddress(transaction.data.recipientId);
+        const recipient: State.IWallet = walletManager.getRepository().findByAddress(transaction.data.recipientId);
         recipient.balance = recipient.balance.minus(transaction.data.amount);
     }
 }

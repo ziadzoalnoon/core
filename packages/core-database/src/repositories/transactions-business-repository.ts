@@ -116,7 +116,9 @@ export class TransactionsBusinessRepository implements Database.ITransactionsBus
     private getPublicKeyFromAddress(senderId: string): string {
         const { walletManager }: Database.IDatabaseService = this.databaseServiceProvider();
 
-        return walletManager.has(senderId) ? walletManager.findByAddress(senderId).publicKey : undefined;
+        return walletManager.getRepository().has(senderId)
+            ? walletManager.getRepository().findByAddress(senderId).publicKey
+            : undefined;
     }
 
     private async mapBlocksToTransactions(rows): Promise<Interfaces.ITransactionData[]> {
@@ -201,7 +203,7 @@ export class TransactionsBusinessRepository implements Database.ITransactionsBus
         // TODO: supported by 'findAll' but was replaced by 'addresses' in 'search' so remove this when removing v1 code
         if (params.ownerId) {
             // custom OP here
-            params.ownerWallet = databaseService.walletManager.findByAddress(params.ownerId);
+            params.ownerWallet = databaseService.walletManager.getRepository().findByAddress(params.ownerId);
             delete params.ownerId;
         }
 

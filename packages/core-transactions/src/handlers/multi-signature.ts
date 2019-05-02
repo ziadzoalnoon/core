@@ -35,7 +35,7 @@ export class MultiSignatureTransactionHandler extends TransactionHandler {
 
         const multiSigAddress = Identities.Address.fromMultiSignatureAsset(data.asset.multiSignature);
 
-        const recipientWallet = databaseWalletManager.findByAddress(multiSigAddress);
+        const recipientWallet = databaseWalletManager.getRepository().findByAddress(multiSigAddress);
         if (recipientWallet.multisignature) {
             throw new MultiSignatureAlreadyRegisteredError();
         }
@@ -76,9 +76,10 @@ export class MultiSignatureTransactionHandler extends TransactionHandler {
         const { data }: Interfaces.ITransaction = transaction;
 
         if (data.version >= 2) {
-            walletManager.findByAddress(
-                Identities.Address.fromMultiSignatureAsset(data.asset.multiSignature),
-            ).multisignature = transaction.data.asset.multiSignature;
+            walletManager
+                .getRepository()
+                .findByAddress(Identities.Address.fromMultiSignatureAsset(data.asset.multiSignature)).multisignature =
+                transaction.data.asset.multiSignature;
         }
     }
 
@@ -86,9 +87,11 @@ export class MultiSignatureTransactionHandler extends TransactionHandler {
         const { data }: Interfaces.ITransaction = transaction;
 
         if (data.version >= 2) {
-            walletManager.findByAddress(
-                Identities.Address.fromMultiSignatureAsset(data.asset.multiSignature),
-            ).multisignature = undefined;
+            walletManager
+                .getRepository()
+                .findByAddress(
+                    Identities.Address.fromMultiSignatureAsset(data.asset.multiSignature),
+                ).multisignature = undefined;
         }
     }
 }

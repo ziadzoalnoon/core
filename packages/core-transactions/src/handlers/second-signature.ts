@@ -17,7 +17,7 @@ export class SecondSignatureTransactionHandler extends TransactionHandler {
             throw new SecondSignatureAlreadyRegisteredError();
         }
 
-        if (databaseWalletManager.findByPublicKey(transaction.data.senderPublicKey).multisignature) {
+        if (databaseWalletManager.getRepository().findByPublicKey(transaction.data.senderPublicKey).multisignature) {
             throw new NotSupportedForMultiSignatureWalletError();
         }
 
@@ -39,14 +39,14 @@ export class SecondSignatureTransactionHandler extends TransactionHandler {
     protected applyToSender(transaction: Interfaces.ITransaction, walletManager: State.IWalletManager): void {
         super.applyToSender(transaction, walletManager);
 
-        walletManager.findByPublicKey(transaction.data.senderPublicKey).secondPublicKey =
+        walletManager.getRepository().findByPublicKey(transaction.data.senderPublicKey).secondPublicKey =
             transaction.data.asset.signature.publicKey;
     }
 
     protected revertForSender(transaction: Interfaces.ITransaction, walletManager: State.IWalletManager): void {
         super.revertForSender(transaction, walletManager);
 
-        walletManager.findByPublicKey(transaction.data.senderPublicKey).secondPublicKey = undefined;
+        walletManager.getRepository().findByPublicKey(transaction.data.senderPublicKey).secondPublicKey = undefined;
     }
 
     protected applyToRecipient(transaction: Interfaces.ITransaction, walletManager: State.IWalletManager): void {

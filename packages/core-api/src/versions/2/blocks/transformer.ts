@@ -5,7 +5,7 @@ import { Utils } from "@arkecosystem/crypto";
 
 export const transformBlock = model => {
     const databaseService = app.resolvePlugin<Database.IDatabaseService>("database");
-    const generator = databaseService.walletManager.findByPublicKey(model.generatorPublicKey);
+    const generator = databaseService.walletManager.getRepository().findByPublicKey(model.generatorPublicKey);
 
     model.reward = Utils.BigNumber.make(model.reward);
     model.totalFee = Utils.BigNumber.make(model.totalFee);
