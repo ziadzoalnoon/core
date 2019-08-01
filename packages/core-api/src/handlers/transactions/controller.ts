@@ -1,5 +1,5 @@
 import { app } from "@arkecosystem/core-container";
-import { P2P, TransactionPool } from "@arkecosystem/core-interfaces";
+import { TransactionPool } from "@arkecosystem/core-interfaces";
 import { Enums, Interfaces } from "@arkecosystem/crypto";
 import Boom from "@hapi/boom";
 import Hapi from "@hapi/hapi";
@@ -21,24 +21,10 @@ export class TransactionsController extends Controller {
 
     public async store(request: Hapi.Request, h: Hapi.ResponseToolkit) {
         try {
-            const processor: TransactionPool.IProcessor = this.transactionPool.makeProcessor();
-            const result = await processor.validate((request.payload as any).transactions);
+            const ticketId: string = await this.transactionPool.createTransactionsJob((request.payload as any).transactions);
 
-            if (result.broadcast.length > 0) {
-                app.resolvePlugin<P2P.IPeerService>("p2p")
-                    .getMonitor()
-                    .broadcastTransactions(processor.getBroadcastTransactions());
-            }
+            return { data: { ticketId } };
 
-            return {
-                data: {
-                    accept: result.accept,
-                    broadcast: result.broadcast,
-                    excess: result.excess,
-                    invalid: result.invalid,
-                },
-                errors: result.errors,
-            };
         } catch (error) {
             return Boom.badImplementation(error);
         }

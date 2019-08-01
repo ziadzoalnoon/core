@@ -32,9 +32,7 @@ export abstract class TransactionHandler implements ITransactionHandler {
         walletManager: State.IWalletManager,
     ): Promise<void>;
 
-    public async verify(transaction: Interfaces.ITransaction, walletManager: State.IWalletManager): Promise<boolean> {
-        const senderWallet: State.IWallet = walletManager.findByPublicKey(transaction.data.senderPublicKey);
-
+    public async verify(transaction: Interfaces.ITransaction, senderWallet: State.IWallet): Promise<boolean> {
         if (senderWallet.hasMultiSignature()) {
             transaction.isVerified = senderWallet.verifySignatures(transaction.data);
         }

@@ -1,7 +1,7 @@
 // tslint:disable:max-classes-per-file
 
 import { app } from "@arkecosystem/core-container";
-import { Logger } from "@arkecosystem/core-interfaces";
+import { Logger, State } from "@arkecosystem/core-interfaces";
 import { Handlers } from "@arkecosystem/core-transactions";
 import { isBlockChained } from "@arkecosystem/core-utils";
 import { Interfaces, Utils } from "@arkecosystem/crypto";
@@ -62,11 +62,15 @@ export class BlockProcessor {
     private async verifyBlock(block: Interfaces.IBlock): Promise<boolean> {
         if (block.verification.containsMultiSignatures) {
             for (const transaction of block.transactions) {
+                const senderWallet: State.IWallet = this.blockchain.database.walletManager.findByPublicKey(
+                    transaction.data.senderPublicKey,
+                );
                 const handler: Handlers.TransactionHandler = Handlers.Registry.get(
                     transaction.type,
                     transaction.typeGroup,
                 );
-                await handler.verify(transaction, this.blockchain.database.walletManager);
+
+                await handler.verify(transaction, senderWallet);
             }
 
             block.verification = block.verify();

@@ -13,7 +13,7 @@ export interface ITransactionHandler {
 
     isActivated(): Promise<boolean>;
 
-    verify(transaction: Interfaces.ITransaction, walletManager: State.IWalletManager): Promise<boolean>;
+    verify(transaction: Interfaces.ITransaction, senderWallet: State.IWallet): Promise<boolean>;
 
     dynamicFee(transaction: Interfaces.ITransaction, addonBytes: number, satoshiPerByte: number): Utils.BigNumber;
 

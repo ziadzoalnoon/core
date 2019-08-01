@@ -1,15 +1,14 @@
-import { strictEqual } from "assert";
-import clonedeep from "lodash.clonedeep";
-
 import { app } from "@arkecosystem/core-container";
 import { ApplicationEvents } from "@arkecosystem/core-event-emitter";
 import { Database, EventEmitter, Logger, State, TransactionPool } from "@arkecosystem/core-interfaces";
 import { Wallets } from "@arkecosystem/core-state";
 import { Handlers } from "@arkecosystem/core-transactions";
 import { Enums, Interfaces, Transactions, Utils } from "@arkecosystem/crypto";
+import { strictEqual } from "assert";
+import clonedeep from "lodash.clonedeep";
 import { ITransactionsProcessed } from "./interfaces";
 import { Memory } from "./memory";
-import { Processor } from "./processor";
+import { Processor, ProcessorV2 } from "./processor";
 import { Storage } from "./storage";
 import { WalletManager } from "./wallet-manager";
 
@@ -27,6 +26,9 @@ export class Connection implements TransactionPool.IConnection {
     private readonly emitter: EventEmitter.EventEmitter = app.resolvePlugin<EventEmitter.EventEmitter>("event-emitter");
     private readonly logger: Logger.ILogger = app.resolvePlugin<Logger.ILogger>("logger");
 
+    // @ts-ignore
+    private readonly processor: ProcessorV2;
+
     constructor({
         options,
         walletManager,
@@ -42,6 +44,12 @@ export class Connection implements TransactionPool.IConnection {
         this.walletManager = walletManager;
         this.memory = memory;
         this.storage = storage;
+
+        try {
+            this.processor = new ProcessorV2(this, this.walletManager);
+        } catch (ex) {
+            console.log(ex.message);
+        }
     }
 
     public async make(): Promise<this> {
@@ -53,6 +61,7 @@ export class Connection implements TransactionPool.IConnection {
             this.memory.remember(transaction, true);
         }
 
+        // TODO: most checks are now in the worker
         this.emitter.once("internal.stateBuilder.finished", async () => {
             const validTransactions = await this.validateTransactions(transactionsFromDisk);
             transactionsFromDisk = transactionsFromDisk.filter(transaction =>
@@ -75,6 +84,10 @@ export class Connection implements TransactionPool.IConnection {
 
     public makeProcessor(): TransactionPool.IProcessor {
         return new Processor(this, this.walletManager);
+    }
+
+    public async createTransactionsJob(transactions: Interfaces.ITransactionData[]): Promise<string> {
+        return this.processor.createTransactionsJob(transactions);
     }
 
     public async getTransactionsByType(type: number): Promise<Set<Interfaces.ITransaction>> {
@@ -172,7 +185,7 @@ export class Connection implements TransactionPool.IConnection {
             if (!this.loggedAllowedSenders.includes(senderPublicKey)) {
                 this.logger.debug(
                     `Transaction pool: allowing sender public key ${senderPublicKey} ` +
-                        `(listed in options.allowedSenders), thus skipping throttling.`,
+                    `(listed in options.allowedSenders), thus skipping throttling.`,
                 );
 
                 this.loggedAllowedSenders.push(senderPublicKey);
@@ -243,7 +256,7 @@ export class Connection implements TransactionPool.IConnection {
 
                     this.logger.error(
                         `Cannot apply transaction ${transaction.id} when trying to accept ` +
-                            `block ${block.data.id}: ${error.message}`,
+                        `block ${block.data.id}: ${error.message}`,
                     );
 
                     continue;
@@ -398,7 +411,7 @@ export class Connection implements TransactionPool.IConnection {
         if (await this.has(transaction.id)) {
             this.logger.debug(
                 "Transaction pool: ignoring attempt to add a transaction that is already " +
-                    `in the pool, id: ${transaction.id}`,
+                `in the pool, id: ${transaction.id}`,
             );
 
             return { transaction, type: "ERR_ALREADY_IN_POOL", message: "Already in pool" };

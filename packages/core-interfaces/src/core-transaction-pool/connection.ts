@@ -16,6 +16,7 @@ export interface IConnection {
     disconnect(): void;
     getPoolSize(): Promise<number>;
     getSenderSize(senderPublicKey: string): Promise<number>;
+    createTransactionsJob(transactions: Interfaces.ITransactionData[]): Promise<string>;
     addTransactions(
         transactions: Interfaces.ITransaction[],
     ): Promise<{

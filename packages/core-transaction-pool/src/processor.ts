@@ -1,16 +1,183 @@
 import { app } from "@arkecosystem/core-container";
 import { Database, Logger, State, TransactionPool } from "@arkecosystem/core-interfaces";
 import { Errors, Handlers } from "@arkecosystem/core-transactions";
-import { Crypto, Enums, Errors as CryptoErrors, Interfaces, Managers, Transactions } from "@arkecosystem/crypto";
+import { Enums, Interfaces, Transactions } from "@arkecosystem/crypto";
+import assert from "assert";
+import async from "async";
+import { delay } from 'bluebird';
 import pluralize from "pluralize";
 import { dynamicFeeMatcher } from "./dynamic-fee";
 import { IDynamicFeeMatch, ITransactionsCached, ITransactionsProcessed } from "./interfaces";
 import { WalletManager } from "./wallet-manager";
+import { BrokerToWorker, PoolBroker } from './worker/pool-broker';
+import { IFinishedTransactionJobResult, ITransactionJobWorkerResult } from './worker/worker';
+
+export class ProcessorV2 {
+    private pendingTickets: Map<string, boolean> = new Map();
+    private processedTickets: Map<string, IFinishedTransactionJobResult> = new Map();
+
+    // @ts-ignore
+    private readonly poolBroker: PoolBroker;
+    private readonly queue: async.AsyncQueue<{ job: ITransactionJobWorkerResult }>;
+
+    public constructor(private readonly pool: TransactionPool.IConnection, private readonly walletManager: WalletManager) {
+
+        try {
+            this.poolBroker = new PoolBroker(this);
+        } catch (ex) {
+            console.log(ex.message);
+        }
+
+        this.queue = async.queue(({ job }: { job: ITransactionJobWorkerResult }, cb) => {
+            const { ticketId, validTransactions, } = job;
+            console.log("received ticket " + ticketId + " with " + validTransactions.length + " valid transactions from worker");
+
+            delay(100)
+                .then(() => {
+                    try {
+                        return this.finishTransactionJob(job, cb);
+                    } catch (error) {
+                        console.log(error.stack);
+                        return cb();
+                    }
+                })
+                .catch(error => {
+                    console.log(error.stack);
+                    return cb();
+                });
+        });
+
+    }
+
+    public async createTransactionsJob(transactions: Interfaces.ITransactionData[]): Promise<string> {
+        // TODO: cache transactions
+
+        const eligibleTransactions: Interfaces.ITransactionData[] = [];
+        const senderWallets: Record<string, State.IWallet> = {};
+        for (const transaction of transactions) {
+            // TODO: optimize
+            if (!(await this.preWorkerChecks(transaction))) {
+                continue;
+            }
+
+            const senderWallet: State.IWallet = this.walletManager.findByPublicKey(transaction.senderPublicKey);
+            senderWallets[transaction.senderPublicKey] = senderWallet;
+
+            // TODO: need to convert bignum back to string, fixme properly,
+            (transaction.amount as any) = transaction.amount.toFixed();
+            (transaction.fee as any) = transaction.fee.toFixed();
+
+            eligibleTransactions.push(transaction);
+        }
+
+        const ticketId: string = await this.poolBroker.sendToWorker(BrokerToWorker.CreateJob, {
+            transactions,
+            senderWallets,
+        });
+
+        this.pendingTickets.set(ticketId, true);
+
+        return ticketId;
+    }
+
+    public addFinishedWorkerJobToQueue(job: ITransactionJobWorkerResult): void {
+        this.queue.push({ job });
+    }
+
+    private async finishTransactionJob(workerJobResult: ITransactionJobWorkerResult, cb: any): Promise<void> {
+        const { ticketId, validTransactions, invalidTransactions } = workerJobResult;
+
+        const jobResult: IFinishedTransactionJobResult = {
+            ticketId,
+            validTransactions: [],
+            invalidTransactions,
+        }
+
+        for (const transactionBuffer of validTransactions) {
+            try {
+                const transaction: Interfaces.ITransaction = Transactions.TransactionFactory.fromBytesUnsafe(transactionBuffer);
+
+                try {
+                    assert(transaction.isVerified);
+                    await this.walletManager.throwIfCannotBeApplied(transaction);
+                    const dynamicFee: IDynamicFeeMatch = dynamicFeeMatcher(transaction);
+                    if (!dynamicFee.enterPool && !dynamicFee.broadcast) {
+                        jobResult.invalidTransactions[transaction.id] = {
+                            error: "ERR_LOW_FEE",
+                            message: "The fee is too low to broadcast and accept the transaction",
+                        };
+
+                    } else {
+                        // if (dynamicFee.enterPool) {
+                        //     this.accept.set(transactionInstance.data.id, transactionInstance);
+                        // }
+
+                        // if (dynamicFee.broadcast) {
+                        //     this.broadcast.set(transactionInstance.data.id, transactionInstance);
+                        // }
+                    }
+
+                    const { notAdded } = await this.pool.addTransactions([transaction]);
+                    if (notAdded.length > 0) {
+                        jobResult.invalidTransactions[transaction.id] = {
+                            error: notAdded[0].type,
+                            message: notAdded[0].message,
+                        }
+
+                        continue;
+                    }
+
+                    jobResult.validTransactions.push(transaction);
+
+                } catch (error) {
+                    jobResult.invalidTransactions[transaction.id] = {
+                        error: "ERR_APPLY",
+                        message: error.message,
+                    };
+                }
+            } catch (error) {
+                console.log("Bad bad error: " + error.message);
+            }
+        }
+
+        this.pendingTickets.delete(jobResult.ticketId);
+        this.processedTickets.set(jobResult.ticketId, jobResult);
+
+        return cb();
+    }
+
+    private async preWorkerChecks(transaction: Interfaces.ITransactionData): Promise<boolean> {
+        try {
+
+            if (await this.pool.has(transaction.id)) {
+                return false;
+            }
+
+            if (await this.pool.hasExceededMaxTransactions(transaction.senderPublicKey)) {
+                return false;
+            }
+
+            const handler: Handlers.TransactionHandler = Handlers.Registry.get(transaction.type, transaction.typeGroup);
+
+            if (!(await handler.canEnterTransactionPool(transaction, this.pool, undefined))) {
+                return false;
+            }
+
+            return true;
+
+        } catch {
+            return false;
+        }
+    }
+
+}
+
 
 /**
  * @TODO: this class has too many responsibilities at the moment.
  * Its sole responsibility should be to validate transactions and return them.
  */
+// tslint:disable-next-line: max-classes-per-file
 export class Processor implements TransactionPool.IProcessor {
     private transactions: Interfaces.ITransactionData[] = [];
     private readonly excess: string[] = [];
@@ -19,7 +186,7 @@ export class Processor implements TransactionPool.IProcessor {
     private readonly invalid: Map<string, Interfaces.ITransactionData> = new Map();
     private readonly errors: { [key: string]: TransactionPool.ITransactionErrorResponse[] } = {};
 
-    constructor(private readonly pool: TransactionPool.IConnection, private readonly walletManager: WalletManager) {}
+    constructor(private readonly pool: TransactionPool.IConnection, private readonly walletManager: WalletManager) { }
 
     public async validate(transactions: Interfaces.ITransactionData[]): Promise<TransactionPool.IProcessorResult> {
         this.cacheTransactions(transactions);
@@ -65,6 +232,7 @@ export class Processor implements TransactionPool.IProcessor {
         this.invalid.set(transaction.id, transaction);
     }
 
+    // TODO: can maybe replaced with something nicer now
     private cacheTransactions(transactions: Interfaces.ITransactionData[]): void {
         const { added, notAdded }: ITransactionsCached = app
             .resolvePlugin<State.IStateService>("state")
@@ -98,112 +266,47 @@ export class Processor implements TransactionPool.IProcessor {
     }
 
     private async filterAndTransformTransactions(transactions: Interfaces.ITransactionData[]): Promise<void> {
-        const { maxTransactionBytes } = app.resolveOptions("transaction-pool");
-
         for (const transaction of transactions) {
             const exists: boolean = await this.pool.has(transaction.id);
 
             if (exists) {
                 this.pushError(transaction, "ERR_DUPLICATE", `Duplicate transaction ${transaction.id}`);
-            } else if (JSON.stringify(transaction).length > maxTransactionBytes) {
-                this.pushError(
-                    transaction,
-                    "ERR_TOO_LARGE",
-                    `Transaction ${transaction.id} is larger than ${maxTransactionBytes} bytes.`,
-                );
             } else if (await this.pool.hasExceededMaxTransactions(transaction.senderPublicKey)) {
                 this.excess.push(transaction.id);
             } else if (await this.validateTransaction(transaction)) {
                 try {
-                    const receivedId: string = transaction.id;
                     const transactionInstance: Interfaces.ITransaction = Transactions.TransactionFactory.fromData(
                         transaction,
                     );
-                    const handler: Handlers.TransactionHandler = Handlers.Registry.get(
-                        transactionInstance.type,
-                        transactionInstance.typeGroup,
-                    );
-                    if (await handler.verify(transactionInstance, this.pool.walletManager)) {
-                        try {
-                            await this.walletManager.throwIfCannotBeApplied(transactionInstance);
-                            const dynamicFee: IDynamicFeeMatch = dynamicFeeMatcher(transactionInstance);
-                            if (!dynamicFee.enterPool && !dynamicFee.broadcast) {
-                                this.pushError(
-                                    transaction,
-                                    "ERR_LOW_FEE",
-                                    "The fee is too low to broadcast and accept the transaction",
-                                );
-                            } else {
-                                if (dynamicFee.enterPool) {
-                                    this.accept.set(transactionInstance.data.id, transactionInstance);
-                                }
-
-                                if (dynamicFee.broadcast) {
-                                    this.broadcast.set(transactionInstance.data.id, transactionInstance);
-                                }
+                    try {
+                        await this.walletManager.throwIfCannotBeApplied(transactionInstance);
+                        const dynamicFee: IDynamicFeeMatch = dynamicFeeMatcher(transactionInstance);
+                        if (!dynamicFee.enterPool && !dynamicFee.broadcast) {
+                            this.pushError(
+                                transaction,
+                                "ERR_LOW_FEE",
+                                "The fee is too low to broadcast and accept the transaction",
+                            );
+                        } else {
+                            if (dynamicFee.enterPool) {
+                                this.accept.set(transactionInstance.data.id, transactionInstance);
                             }
-                        } catch (error) {
-                            this.pushError(transaction, "ERR_APPLY", error.message);
-                        }
-                    } else {
-                        transaction.id = receivedId;
 
-                        this.pushError(
-                            transaction,
-                            "ERR_BAD_DATA",
-                            "Transaction didn't pass the verification process.",
-                        );
+                            if (dynamicFee.broadcast) {
+                                this.broadcast.set(transactionInstance.data.id, transactionInstance);
+                            }
+                        }
+                    } catch (error) {
+                        this.pushError(transaction, "ERR_APPLY", error.message);
                     }
                 } catch (error) {
-                    if (error instanceof CryptoErrors.TransactionSchemaError) {
-                        this.pushError(transaction, "ERR_TRANSACTION_SCHEMA", error.message);
-                    } else {
-                        this.pushError(transaction, "ERR_UNKNOWN", error.message);
-                    }
+                    this.pushError(transaction, "ERR_UNKNOWN", error.message);
                 }
             }
         }
     }
 
     private async validateTransaction(transaction: Interfaces.ITransactionData): Promise<boolean> {
-        const now: number = Crypto.Slots.getTime();
-        const lastHeight: number = app
-            .resolvePlugin<State.IStateService>("state")
-            .getStore()
-            .getLastHeight();
-
-        if (transaction.timestamp > now + 3600) {
-            const secondsInFuture: number = transaction.timestamp - now;
-
-            this.pushError(
-                transaction,
-                "ERR_FROM_FUTURE",
-                `Transaction ${transaction.id} is ${secondsInFuture} seconds in the future`,
-            );
-
-            return false;
-        } else if (transaction.expiration > 0 && transaction.expiration <= lastHeight + 1) {
-            this.pushError(
-                transaction,
-                "ERR_EXPIRED",
-                `Transaction ${transaction.id} is expired since ${lastHeight - transaction.expiration} blocks.`,
-            );
-
-            return false;
-        }
-
-        if (transaction.network && transaction.network !== Managers.configManager.get("network.pubKeyHash")) {
-            this.pushError(
-                transaction,
-                "ERR_WRONG_NETWORK",
-                `Transaction network '${transaction.network}' does not match '${Managers.configManager.get(
-                    "pubKeyHash",
-                )}'`,
-            );
-
-            return false;
-        }
-
         try {
             // @TODO: this leaks private members, refactor this
             return Handlers.Registry.get(transaction.type, transaction.typeGroup).canEnterTransactionPool(
