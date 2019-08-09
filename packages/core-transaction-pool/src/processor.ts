@@ -71,7 +71,7 @@ export class ProcessorV2 {
         }
 
         const ticketId: string = await this.poolBroker.sendToWorker(BrokerToWorker.CreateJob, {
-            transactions,
+            transactions: eligibleTransactions,
             senderWallets,
         });
 
