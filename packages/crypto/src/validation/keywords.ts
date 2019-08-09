@@ -57,6 +57,10 @@ const bignumber = (ajv: Ajv) => {
     const instanceOf = ajvKeywords.get("instanceof").definition;
     instanceOf.CONSTRUCTORS.BigNumber = BigNumber;
 
+    // Regex used to determine wether the parentObject is part of an array, if so
+    // do not mutate it.
+    const regex: RegExp = new RegExp(/transactions\[\d+\]/);
+
     ajv.addKeyword("bignumber", {
         compile(schema) {
             return (data, dataPath, parentObject: any, property) => {
@@ -88,7 +92,8 @@ const bignumber = (ajv: Ajv) => {
                     return false;
                 }
 
-                if (parentObject && property) {
+                const immutable: boolean = regex.test(dataPath);
+                if (parentObject && property && !immutable) {
                     parentObject[property] = bignum;
                 }
 
