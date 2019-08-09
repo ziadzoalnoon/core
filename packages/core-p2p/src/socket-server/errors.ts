@@ -26,12 +26,6 @@ export class InvalidBlockReceivedError extends ServerError {
     }
 }
 
-export class InvalidTransactionsError extends ServerError {
-    constructor() {
-        super("The payload contains invalid transaction.");
-    }
-}
-
 export class UnchainedBlockError extends ServerError {
     constructor(lastHeight: number, nextHeight: number) {
         super(`Last received block ${nextHeight} cannot be chained to ${lastHeight}.`);

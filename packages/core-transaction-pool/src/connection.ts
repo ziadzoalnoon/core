@@ -8,7 +8,7 @@ import { strictEqual } from "assert";
 import clonedeep from "lodash.clonedeep";
 import { ITransactionsProcessed } from "./interfaces";
 import { Memory } from "./memory";
-import { Processor, ProcessorV2 } from "./processor";
+import { Processor } from "./processor";
 import { Storage } from "./storage";
 import { WalletManager } from "./wallet-manager";
 
@@ -44,12 +44,7 @@ export class Connection implements TransactionPool.IConnection {
         this.walletManager = walletManager;
         this.memory = memory;
         this.storage = storage;
-
-        try {
-            this.processor = new ProcessorV2(this, this.walletManager);
-        } catch (ex) {
-            console.log(ex.message);
-        }
+        this.processor = new Processor(this, this.walletManager);
     }
 
     public async make(): Promise<this> {
@@ -80,10 +75,6 @@ export class Connection implements TransactionPool.IConnection {
     public disconnect(): void {
         this.syncToPersistentStorage();
         this.storage.disconnect();
-    }
-
-    public makeProcessor(): TransactionPool.IProcessor {
-        return new Processor(this, this.walletManager);
     }
 
     public async createTransactionsJob(transactions: Interfaces.ITransactionData[]): Promise<string> {

@@ -6,7 +6,7 @@ import pluralize from "pluralize";
 import { MissingCommonBlockError } from "../../errors";
 import { IPeerPingResponse } from "../../interfaces";
 import { isWhitelisted } from "../../utils";
-import { InvalidTransactionsError, UnchainedBlockError } from "../errors";
+import { UnchainedBlockError } from "../errors";
 import { getPeerConfig } from "../utils/get-peer-config";
 import { mapAddr } from "../utils/map-addr";
 
@@ -80,22 +80,10 @@ export const postBlock = async ({ req }): Promise<void> => {
     blockchain.handleIncomingBlock(block, fromForger);
 };
 
-export const postTransactions = async ({ service, req }: { service: P2P.IPeerService; req }): Promise<string[]> => {
-    const processor: TransactionPool.IProcessor = app
+export const postTransactions = async ({ req }): Promise<string> => {
+    return app
         .resolvePlugin<TransactionPool.IConnection>("transaction-pool")
-        .makeProcessor();
-
-    const result: TransactionPool.IProcessorResult = await processor.validate(req.data.transactions);
-
-    if (result.invalid.length > 0) {
-        throw new InvalidTransactionsError();
-    }
-
-    if (result.broadcast.length > 0) {
-        service.getMonitor().broadcastTransactions(processor.getBroadcastTransactions());
-    }
-
-    return result.accept;
+        .createTransactionsJob(req.data.transactions);
 };
 
 export const getBlocks = async ({ req }): Promise<Interfaces.IBlockData[] | Database.IDownloadBlock[]> => {

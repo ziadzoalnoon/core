@@ -3,7 +3,7 @@ import { ApplicationEvents } from "@arkecosystem/core-event-emitter";
 import { EventEmitter } from "@arkecosystem/core-interfaces";
 import { Interfaces, Managers } from "@arkecosystem/crypto";
 import { Worker } from "worker_threads";
-import { ProcessorV2 } from '../processor';
+import { Processor } from '../processor';
 import { IMessageObject } from "./worker";
 
 export enum BrokerToWorker {
@@ -21,7 +21,7 @@ export enum WorkerToBroker {
 export class PoolBroker {
     private worker: Worker;
 
-    public constructor(private readonly processor: ProcessorV2) {
+    public constructor(private readonly processor: Processor) {
         this.setupWorker();
 
         app.resolvePlugin<EventEmitter.EventEmitter>("event-emitter").on(

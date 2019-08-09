@@ -1,5 +1,4 @@
 import { Enums, Interfaces } from "@arkecosystem/crypto";
-import { IProcessor } from "./processor";
 
 export interface IAddTransactionResponse {
     transaction?: Interfaces.ITransaction;
@@ -9,8 +8,6 @@ export interface IAddTransactionResponse {
 
 export interface IConnection {
     walletManager: any;
-
-    makeProcessor(): IProcessor;
 
     make(): Promise<this>;
     disconnect(): void;

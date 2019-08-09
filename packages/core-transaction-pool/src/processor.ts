@@ -12,7 +12,7 @@ import { WalletManager } from "./wallet-manager";
 import { BrokerToWorker, PoolBroker } from './worker/pool-broker';
 import { IFinishedTransactionJobResult, ITransactionJobWorkerResult } from './worker/worker';
 
-export class ProcessorV2 {
+export class Processor {
     private pendingTickets: Map<string, boolean> = new Map();
     private processedTickets: Map<string, IFinishedTransactionJobResult> = new Map();
 
@@ -62,10 +62,6 @@ export class ProcessorV2 {
 
             const senderWallet: State.IWallet = this.walletManager.findByPublicKey(transaction.senderPublicKey);
             senderWallets[transaction.senderPublicKey] = senderWallet;
-
-            // TODO: need to convert bignum back to string, fixme properly,
-            (transaction.amount as any) = transaction.amount.toFixed();
-            (transaction.fee as any) = transaction.fee.toFixed();
 
             eligibleTransactions.push(transaction);
         }
@@ -153,9 +149,9 @@ export class ProcessorV2 {
                 return false;
             }
 
-            if (await this.pool.hasExceededMaxTransactions(transaction.senderPublicKey)) {
-                return false;
-            }
+            //  if (await this.pool.hasExceededMaxTransactions(transaction.senderPublicKey)) {
+            //      return false;
+            //  }
 
             const handler: Handlers.TransactionHandler = Handlers.Registry.get(transaction.type, transaction.typeGroup);
 
@@ -178,7 +174,7 @@ export class ProcessorV2 {
  * Its sole responsibility should be to validate transactions and return them.
  */
 // tslint:disable-next-line: max-classes-per-file
-export class Processor implements TransactionPool.IProcessor {
+export class LegacyProcessor implements TransactionPool.IProcessor {
     private transactions: Interfaces.ITransactionData[] = [];
     private readonly excess: string[] = [];
     private readonly accept: Map<string, Interfaces.ITransaction> = new Map();
