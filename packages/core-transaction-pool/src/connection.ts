@@ -529,6 +529,7 @@ export class Connection implements TransactionPool.IConnection {
         }
 
         // HACK: need tx agonistic way for wallets which are modified by transaction
+        // TODO: use the new TempWalletManager class
         if (transaction.type === Enums.TransactionType.Vote) {
             const vote = transaction.data.asset.votes[0].slice(1);
             if (!localWalletManager.hasByPublicKey(vote)) {
