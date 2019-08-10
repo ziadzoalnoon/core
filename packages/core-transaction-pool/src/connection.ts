@@ -167,14 +167,6 @@ export class Connection implements TransactionPool.IConnection {
         }
     }
 
-    public getPendingTickets(): string[] {
-        return this.processor.getPendingTickets();
-    }
-
-    public getProcessedTickets(): TransactionPool.IFinishedTransactionJobResult[] {
-        return this.processor.getProcessedTickets();
-    }
-
     public hasPendingTicket(ticketId: string): boolean {
         return this.processor.hasPendingTicket(ticketId);
     }
