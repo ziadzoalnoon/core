@@ -3,25 +3,14 @@ import { ApplicationEvents } from "@arkecosystem/core-event-emitter";
 import { EventEmitter } from "@arkecosystem/core-interfaces";
 import { Interfaces, Managers } from "@arkecosystem/crypto";
 import { Worker } from "worker_threads";
-import { Processor } from '../processor';
-import { IMessageObject } from "./worker";
+import { BrokerToWorker, IMessageObject, IPendingTransactionJobResult, WorkerToBroker } from './types';
 
-export enum BrokerToWorker {
-    Initialize = "initialize",
-    CreateJob = "createJob",
-    BlockHeightUpdate = "blockHeightUpdate",
-}
-
-export enum WorkerToBroker {
-    TicketId = "ticketId",
-    TransactionJobResult = "transactionJobResult",
-    Unknown = "unknown",
-}
+export type FinishedJobCallback = (job: IPendingTransactionJobResult) => void;
 
 export class PoolBroker {
     private worker: Worker;
 
-    public constructor(private readonly processor: Processor) {
+    public constructor(private readonly finishedJobCallback: FinishedJobCallback) {
         this.setupWorker();
 
         app.resolvePlugin<EventEmitter.EventEmitter>("event-emitter").on(
@@ -66,7 +55,7 @@ export class PoolBroker {
                     break;
                 }
                 case WorkerToBroker.TransactionJobResult: {
-                    this.processor.addFinishedWorkerJobToQueue(message.data);
+                    this.finishedJobCallback(message.data);
                     break;
                 }
                 default: {
@@ -74,9 +63,11 @@ export class PoolBroker {
                 }
             }
         });
+
         this.worker.on("error", e => {
             console.log(e.stack);
         });
+
         this.worker.on("exit", code => {
             console.log("Worker exittng...");
             if (code !== 0) {

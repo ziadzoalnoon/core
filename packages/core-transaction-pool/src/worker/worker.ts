@@ -6,45 +6,18 @@ import async from "async";
 import { delay } from "bluebird";
 import uuidv4 from "uuid/v4";
 import { parentPort } from "worker_threads";
-import { BrokerToWorker, WorkerToBroker } from "./pool-broker";
-
-export interface IMessageObject<T> {
-    type: T;
-    data: any;
-}
-
-export interface ITransactionValidationError {
-    error: string;
-    message: string;
-}
-
-export interface ITransactionsWorkerJob {
-    transactions: ReadonlyArray<Interfaces.ITransactionData>;
-    senderWallets: Record<string, State.IWallet>;
-}
-
-export interface ITransactionJobWorkerResult {
-    ticketId: string;
-    validTransactions: Buffer[];
-    invalidTransactions: Record<string, ITransactionValidationError>;
-}
-
-export interface IFinishedTransactionJobResult {
-    ticketId: string;
-    validTransactions: Interfaces.ITransaction[];
-    invalidTransactions: Record<string, ITransactionValidationError>;
-}
-
-export interface IQueuedTransactionsJob extends ITransactionsWorkerJob {
-    ticketId: string;
-}
+import {
+    BrokerToWorker, IMessageObject, IPendingTransactionJobResult,
+    IQueuedTransactionJob, ITransactionWorkerJob, WorkerToBroker
+} from './types';
+import { pushError } from './utils';
 
 export class PoolWorker {
     private options: Record<string, any>;
-    private queue: async.AsyncQueue<{ job: IQueuedTransactionsJob }>;
+    private queue: async.AsyncQueue<{ job: IQueuedTransactionJob }>;
 
     public constructor() {
-        this.queue = async.queue(({ job }: { job: IQueuedTransactionsJob }, cb) => {
+        this.queue = async.queue(({ job }: { job: IQueuedTransactionJob }, cb) => {
             const { transactions } = job;
             console.log("queue processing: " + transactions.length);
             delay(100)
@@ -97,27 +70,26 @@ export class PoolWorker {
         });
     }
 
-    private addTransactionsToQueue(job: ITransactionsWorkerJob): string {
+    private addTransactionsToQueue(job: ITransactionWorkerJob): string {
         const ticketId: string = uuidv4();
         this.queue.push({ job: { ...job, ticketId } });
         return ticketId;
     }
 
-    private async processTransactions(job: IQueuedTransactionsJob, cb: any): Promise<void> {
+    private async processTransactions(job: IQueuedTransactionJob, cb: any): Promise<void> {
         const { transactions, senderWallets } = job;
 
-        const response: ITransactionJobWorkerResult = {
+        const result: IPendingTransactionJobResult = {
             ticketId: job.ticketId,
             validTransactions: [],
-            invalidTransactions: {},
+            invalid: {},
+            excess: {},
+            errors: {},
         };
 
         for (const transactionData of transactions) {
-            console.log("tx: " + transactionData.id);
             try {
-                const result = this.performPrimitiveTransactionChecks(transactionData);
-                if (result.error !== undefined) {
-                    response.invalidTransactions[transactionData.id] = result;
+                if (!this.performBasicTransactionChecks(result, transactionData)) {
                     continue;
                 }
 
@@ -133,71 +105,87 @@ export class PoolWorker {
                 });
 
                 if (!(await handler.verify(transaction, senderWallet))) {
-                    response.invalidTransactions[transactionData.id] = {
-                        error: "ERR_BAD_DATA",
+
+                    pushError(result, transactionData.id, {
+                        type: "ERR_BAD_DATA",
                         message: "Failed to verify transaction signature.",
-                    };
+                    });
 
                     continue;
                 }
 
-                response.validTransactions.push(transaction.serialized);
+                result.validTransactions.push({ buffer: transaction.serialized, id: transaction.id });
             } catch (error) {
-                console.log("=!=!=!=!");
                 console.log(error.stack);
                 if (error instanceof Errors.TransactionSchemaError) {
-                    response.invalidTransactions[transactionData.id] = {
-                        error: "ERR_TRANSACTION_SCHEMA",
+                    pushError(result, transactionData.id, {
+                        type: "ERR_TRANSACTION_SCHEMA",
                         message: error.message,
-                    };
+                    });
+
                 } else {
-                    response.invalidTransactions[transactionData.id] = {
-                        error: "ERR_UNKNOWN",
+                    pushError(result, transactionData.id, {
+                        type: "ERR_UNKNOWN",
                         message: error.message,
-                    };
+                    });
                 }
             }
         }
 
-        console.log("Processed " + response.validTransactions.length + " valid transactions.");
-        this.sendToBroker(WorkerToBroker.TransactionJobResult, response);
+        console.log("Processed " + result.validTransactions.length + " valid transactions.");
+        this.sendToBroker(WorkerToBroker.TransactionJobResult, result);
 
-        return cb(response);
+        return cb(result);
     }
 
-    private performPrimitiveTransactionChecks(transaction: Interfaces.ITransactionData): ITransactionValidationError {
-        const result: ITransactionValidationError = {
-            error: undefined,
-            message: undefined,
-        };
-
+    private performBasicTransactionChecks(result: IPendingTransactionJobResult, transaction: Interfaces.ITransactionData): boolean {
         const now: number = Crypto.Slots.getTime();
         const lastHeight: number = Managers.configManager.getHeight();
         const maxTransactionBytes: number = this.options.maxTransactionBytes;
 
         if (transaction.timestamp > now + 3600) {
             const secondsInFuture: number = transaction.timestamp - now;
-            result.error = "ERR_FROM_FUTURE";
-            result.message = `Transaction ${transaction.id} is ${secondsInFuture} seconds in the future`;
+
+            pushError(result, transaction.id, {
+                type: "ERR_FROM_FUTURE",
+                message: `Transaction ${transaction.id} is ${secondsInFuture} seconds in the future`
+            });
+
+            return false;
+
         } else if (transaction.expiration > 0 && transaction.expiration <= lastHeight + 1) {
-            result.error = "ERR_EXPIRED";
-            result.message = `Transaction ${transaction.id} is expired since ${lastHeight -
-                transaction.expiration} blocks.`;
+            pushError(result, transaction.id, {
+                type: "ERR_EXPIRED",
+                message: `Transaction ${transaction.id} is expired since ${lastHeight -
+                    transaction.expiration} blocks.`
+            });
+
+            return false;
+
         } else if (transaction.network && transaction.network !== Managers.configManager.get("network.pubKeyHash")) {
-            result.error = "ERR_WRONG_NETWORK";
-            result.message = `Transaction network '${transaction.network}' does not match '${Managers.configManager.get(
-                "pubKeyHash",
-            )}'`;
+            pushError(result, transaction.id, {
+                type: "ERR_WRONG_NETWORK",
+                message: `Transaction network '${transaction.network}' does not match '${Managers.configManager.get(
+                    "pubKeyHash",
+                )}'`
+            });
+
+            return false;
+
         } else if (JSON.stringify(transaction).length > maxTransactionBytes) {
             // TODO: still needed ?
-            result.error = "ERR_TOO_LARGE";
-            result.message = `Transaction ${transaction.id} is larger than ${maxTransactionBytes} bytes.`;
+            pushError(result, transaction.id, {
+                type: "ERR_TOO_LARGE",
+                message: `Transaction ${transaction.id} is larger than ${maxTransactionBytes} bytes.`,
+            });
+
+            return false;
         }
 
-        return result;
+        return true;
     }
 
-    private sendToBroker<T>(type: WorkerToBroker, data: T): void {
+    private sendToBroker(type: WorkerToBroker, data: any): void {
         parentPort.postMessage({ type, data });
     }
 }

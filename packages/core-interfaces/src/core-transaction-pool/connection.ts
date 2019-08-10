@@ -11,6 +11,10 @@ export interface IConnection {
 
     make(): Promise<this>;
     disconnect(): void;
+
+    getPendingTickets(): string[];
+    getProcessedTickets(): any[];
+
     getPoolSize(): Promise<number>;
     getSenderSize(senderPublicKey: string): Promise<number>;
     createTransactionsJob(transactions: Interfaces.ITransactionData[]): Promise<string>;

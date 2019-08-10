@@ -11,6 +11,7 @@ import { Memory } from "./memory";
 import { Processor } from "./processor";
 import { Storage } from "./storage";
 import { WalletManager } from "./wallet-manager";
+import { IFinishedTransactionJobResult } from './worker/types';
 
 export class Connection implements TransactionPool.IConnection {
     // @TODO: make this private, requires some bigger changes to tests
@@ -26,8 +27,7 @@ export class Connection implements TransactionPool.IConnection {
     private readonly emitter: EventEmitter.EventEmitter = app.resolvePlugin<EventEmitter.EventEmitter>("event-emitter");
     private readonly logger: Logger.ILogger = app.resolvePlugin<Logger.ILogger>("logger");
 
-    // @ts-ignore
-    private readonly processor: ProcessorV2;
+    private readonly processor: Processor;
 
     constructor({
         options,
@@ -167,6 +167,15 @@ export class Connection implements TransactionPool.IConnection {
             this.removeTransactionById(transaction.id);
         }
     }
+
+    public getPendingTickets(): string[] {
+        return this.processor.getPendingTickets();
+    }
+
+    public getProcessedTickets(): IFinishedTransactionJobResult[] {
+        return this.processor.getProcessedTickets();
+    }
+
 
     // @TODO: move this to a more appropriate place
     public async hasExceededMaxTransactions(senderPublicKey: string): Promise<boolean> {

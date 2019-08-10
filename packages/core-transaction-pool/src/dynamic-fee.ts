@@ -26,11 +26,11 @@ export const dynamicFeeMatcher = (transaction: Interfaces.ITransaction): IDynami
         if (fee.isGreaterThanOrEqualTo(minFeeBroadcast)) {
             broadcast = true;
 
-            app.resolvePlugin<Logger.ILogger>("logger").debug(
-                `Transaction ${id} eligible for broadcast - fee of ${Utils.formatSatoshi(fee)} is ${
-                    fee.isEqualTo(minFeeBroadcast) ? "equal to" : "greater than"
-                } minimum fee (${Utils.formatSatoshi(minFeeBroadcast)})`,
-            );
+            // app.resolvePlugin<Logger.ILogger>("logger").debug(
+            //     `Transaction ${id} eligible for broadcast - fee of ${Utils.formatSatoshi(fee)} is ${
+            //         fee.isEqualTo(minFeeBroadcast) ? "equal to" : "greater than"
+            //     } minimum fee (${Utils.formatSatoshi(minFeeBroadcast)})`,
+            // );
         } else {
             broadcast = false;
 
@@ -46,11 +46,11 @@ export const dynamicFeeMatcher = (transaction: Interfaces.ITransaction): IDynami
         if (fee.isGreaterThanOrEqualTo(minFeePool)) {
             enterPool = true;
 
-            app.resolvePlugin<Logger.ILogger>("logger").debug(
-                `Transaction ${id} eligible to enter pool - fee of ${Utils.formatSatoshi(fee)} is ${
-                    fee.isEqualTo(minFeePool) ? "equal to" : "greater than"
-                } minimum fee (${Utils.formatSatoshi(minFeePool)})`,
-            );
+            // app.resolvePlugin<Logger.ILogger>("logger").debug(
+            //     `Transaction ${id} eligible to enter pool - fee of ${Utils.formatSatoshi(fee)} is ${
+            //         fee.isEqualTo(minFeePool) ? "equal to" : "greater than"
+            //     } minimum fee (${Utils.formatSatoshi(minFeePool)})`,
+            // );
         } else {
             enterPool = false;
 

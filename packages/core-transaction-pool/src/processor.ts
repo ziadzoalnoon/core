@@ -9,28 +9,26 @@ import pluralize from "pluralize";
 import { dynamicFeeMatcher } from "./dynamic-fee";
 import { IDynamicFeeMatch, ITransactionsCached, ITransactionsProcessed } from "./interfaces";
 import { WalletManager } from "./wallet-manager";
-import { BrokerToWorker, PoolBroker } from './worker/pool-broker';
-import { IFinishedTransactionJobResult, ITransactionJobWorkerResult } from './worker/worker';
+import { PoolBroker } from './worker/pool-broker';
+import { BrokerToWorker, IFinishedTransactionJobResult, IPendingTransactionJobResult } from './worker/types';
+import { pushError } from './worker/utils';
 
 export class Processor {
     private pendingTickets: Map<string, boolean> = new Map();
     private processedTickets: Map<string, IFinishedTransactionJobResult> = new Map();
 
-    // @ts-ignore
     private readonly poolBroker: PoolBroker;
-    private readonly queue: async.AsyncQueue<{ job: ITransactionJobWorkerResult }>;
+    private readonly queue: async.AsyncQueue<{ job: IPendingTransactionJobResult }>;
 
     public constructor(private readonly pool: TransactionPool.IConnection, private readonly walletManager: WalletManager) {
+        this.poolBroker = new PoolBroker((job: IPendingTransactionJobResult) => this.queue.push({ job }));
 
-        try {
-            this.poolBroker = new PoolBroker(this);
-        } catch (ex) {
-            console.log(ex.message);
-        }
-
-        this.queue = async.queue(({ job }: { job: ITransactionJobWorkerResult }, cb) => {
+        this.queue = async.queue(({ job }: { job: IPendingTransactionJobResult }, cb) => {
             const { ticketId, validTransactions, } = job;
-            console.log("received ticket " + ticketId + " with " + validTransactions.length + " valid transactions from worker");
+
+            app.resolvePlugin<Logger.ILogger>("logger").debug(
+                `Received ticket ${ticketId} with ${validTransactions.length} valid transactions from worker.`,
+            );
 
             delay(100)
                 .then(() => {
@@ -47,6 +45,14 @@ export class Processor {
                 });
         });
 
+    }
+
+    public getPendingTickets(): string[] {
+        return [...this.pendingTickets.keys()];
+    }
+
+    public getProcessedTickets(): IFinishedTransactionJobResult[] {
+        return [...this.processedTickets.values()];
     }
 
     public async createTransactionsJob(transactions: Interfaces.ITransactionData[]): Promise<string> {
@@ -66,78 +72,26 @@ export class Processor {
             eligibleTransactions.push(transaction);
         }
 
-        const ticketId: string = await this.poolBroker.sendToWorker(BrokerToWorker.CreateJob, {
+        const ticketId: string = (await this.poolBroker.sendToWorker(BrokerToWorker.CreateJob, {
             transactions: eligibleTransactions,
             senderWallets,
-        });
+        })).data;
 
         this.pendingTickets.set(ticketId, true);
 
         return ticketId;
     }
 
-    public addFinishedWorkerJobToQueue(job: ITransactionJobWorkerResult): void {
-        this.queue.push({ job });
-    }
+    private async finishTransactionJob(pendingJob: IPendingTransactionJobResult, cb: any): Promise<void> {
+        pendingJob.accept = {};
+        pendingJob.broadcast = {};
 
-    private async finishTransactionJob(workerJobResult: ITransactionJobWorkerResult, cb: any): Promise<void> {
-        const { ticketId, validTransactions, invalidTransactions } = workerJobResult;
+        const acceptedTransactions: Interfaces.ITransaction[] = await this.performWalletChecks(pendingJob);
 
-        const jobResult: IFinishedTransactionJobResult = {
-            ticketId,
-            validTransactions: [],
-            invalidTransactions,
-        }
+        await this.removeForgedTransactions(pendingJob);
+        await this.addToTransactionPool(acceptedTransactions, pendingJob);
 
-        for (const transactionBuffer of validTransactions) {
-            try {
-                const transaction: Interfaces.ITransaction = Transactions.TransactionFactory.fromBytesUnsafe(transactionBuffer);
-
-                try {
-                    assert(transaction.isVerified);
-                    await this.walletManager.throwIfCannotBeApplied(transaction);
-                    const dynamicFee: IDynamicFeeMatch = dynamicFeeMatcher(transaction);
-                    if (!dynamicFee.enterPool && !dynamicFee.broadcast) {
-                        jobResult.invalidTransactions[transaction.id] = {
-                            error: "ERR_LOW_FEE",
-                            message: "The fee is too low to broadcast and accept the transaction",
-                        };
-
-                    } else {
-                        // if (dynamicFee.enterPool) {
-                        //     this.accept.set(transactionInstance.data.id, transactionInstance);
-                        // }
-
-                        // if (dynamicFee.broadcast) {
-                        //     this.broadcast.set(transactionInstance.data.id, transactionInstance);
-                        // }
-                    }
-
-                    const { notAdded } = await this.pool.addTransactions([transaction]);
-                    if (notAdded.length > 0) {
-                        jobResult.invalidTransactions[transaction.id] = {
-                            error: notAdded[0].type,
-                            message: notAdded[0].message,
-                        }
-
-                        continue;
-                    }
-
-                    jobResult.validTransactions.push(transaction);
-
-                } catch (error) {
-                    jobResult.invalidTransactions[transaction.id] = {
-                        error: "ERR_APPLY",
-                        message: error.message,
-                    };
-                }
-            } catch (error) {
-                console.log("Bad bad error: " + error.message);
-            }
-        }
-
-        this.pendingTickets.delete(jobResult.ticketId);
-        this.processedTickets.set(jobResult.ticketId, jobResult);
+        this.writeResult(pendingJob, acceptedTransactions);
 
         return cb();
     }
@@ -164,6 +118,122 @@ export class Processor {
         } catch {
             return false;
         }
+    }
+
+    private async performWalletChecks(pendingJob: IPendingTransactionJobResult): Promise<Interfaces.ITransaction[]> {
+        const { validTransactions } = pendingJob;
+        const acceptedTransactions: Interfaces.ITransaction[] = [];
+        for (const { buffer, id } of validTransactions) {
+            try {
+                const transaction: Interfaces.ITransaction = Transactions.TransactionFactory.fromBytesUnsafe(buffer, id);
+
+                try {
+                    await this.walletManager.throwIfCannotBeApplied(transaction);
+                    const dynamicFee: IDynamicFeeMatch = dynamicFeeMatcher(transaction);
+                    if (!dynamicFee.enterPool && !dynamicFee.broadcast) {
+                        pushError(pendingJob, transaction.id, {
+                            type: "ERR_LOW_FEE",
+                            message: "The fee is too low to broadcast and accept the transaction",
+                        });
+
+                        continue;
+
+                    }
+
+                    if (dynamicFee.enterPool) {
+                        pendingJob.accept[transaction.id] = true;
+                    }
+
+                    if (dynamicFee.broadcast) {
+                        pendingJob.broadcast[transaction.id] = true;
+                    }
+
+                    acceptedTransactions.push(transaction);
+
+                } catch (error) {
+                    pushError(pendingJob, transaction.id, {
+                        type: "ERR_APPLY",
+                        message: error.message,
+                    });
+                }
+            } catch (error) {
+                pushError(pendingJob, id, {
+                    type: "ERR_UNKNOWN",
+                    message: error.message
+                });
+            }
+        }
+
+        return acceptedTransactions;
+    }
+
+    private async removeForgedTransactions(pendingJob: IPendingTransactionJobResult): Promise<void> {
+        const forgedIdsSet: string[] = await app
+            .resolvePlugin<Database.IDatabaseService>("database")
+            .getForgedTransactionsIds([
+                ...new Set(
+                    [
+                        ...Object.keys(pendingJob.accept),
+                        ...Object.keys(pendingJob.broadcast)
+                    ])
+            ]);
+
+        for (const id of forgedIdsSet) {
+            pushError(pendingJob, id, {
+                type: "ERR_FORGED", message: "Already forged."
+            });
+
+            delete pendingJob.accept[id];
+            delete pendingJob.broadcast[id];
+
+            const index: number = pendingJob.validTransactions.findIndex(transaction => transaction.id === id);
+            assert(index !== -1);
+            pendingJob.validTransactions.splice(index, 1);
+        }
+    }
+
+    private async addToTransactionPool(transactions: Interfaces.ITransaction[], pendingJob: IPendingTransactionJobResult): Promise<void> {
+        const { notAdded } = await this.pool.addTransactions(transactions.filter(({ id }) => pendingJob.accept[id]));
+
+        for (const item of notAdded) {
+            delete pendingJob.accept[item.transaction.id];
+
+            if (item.type !== "ERR_POOL_FULL") {
+                delete pendingJob.broadcast[item.transaction.id];
+            }
+
+            pushError(pendingJob, item.transaction.id, {
+                type: item.type,
+                message: item.message
+            });
+        }
+    }
+
+    private writeResult(pendingJob: IPendingTransactionJobResult, validTransactions: Interfaces.ITransaction[]): void {
+        const jobResult: IFinishedTransactionJobResult = {
+            ticketId: pendingJob.ticketId,
+            accept: Object.keys(pendingJob.accept),
+            broadcast: Object.keys(pendingJob.broadcast),
+            invalid: Object.keys(pendingJob.invalid),
+            excess: Object.keys(pendingJob.excess),
+            errors: Object.keys(pendingJob.errors).length > 0 ? pendingJob.errors : undefined,
+        }
+
+        this.pendingTickets.delete(jobResult.ticketId);
+        this.processedTickets.set(jobResult.ticketId, jobResult);
+
+        this.printStats(jobResult, validTransactions);
+    }
+
+    private printStats(finishedJob: IFinishedTransactionJobResult, validTransactions: Interfaces.ITransaction[]): void {
+        const total: number = validTransactions.length + finishedJob.excess.length + finishedJob.invalid.length;
+        const stats: string = ["accept", "broadcast", "excess", "invalid"]
+            .map(prop => `${prop}: ${finishedJob[prop].length}`)
+            .join(" ");
+
+        app.resolvePlugin<Logger.ILogger>("logger").info(
+            `Received ${pluralize("transaction", total, true)} (${stats}).`,
+        );
     }
 
 }
