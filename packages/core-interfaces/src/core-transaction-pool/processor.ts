@@ -1,7 +1,7 @@
 import { Interfaces } from "@arkecosystem/crypto";
 
 export interface IProcessor {
-    validate(transactions: Interfaces.ITransactionData[]): Promise<IProcessorResult>;
+    validate(transactions: Interfaces.ITransactionData[]): Promise<IFinishedTransactionJobResult>;
 
     getTransactions(): Interfaces.ITransactionData[];
     getBroadcastTransactions(): Interfaces.ITransaction[];
@@ -10,7 +10,8 @@ export interface IProcessor {
     pushError(transaction: Interfaces.ITransactionData, type: string, message: string): void;
 }
 
-export interface IProcessorResult {
+export interface IFinishedTransactionJobResult {
+    ticketId: string;
     accept: string[];
     broadcast: string[];
     invalid: string[];

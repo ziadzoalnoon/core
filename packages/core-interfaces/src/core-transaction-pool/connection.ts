@@ -1,4 +1,5 @@
 import { Enums, Interfaces } from "@arkecosystem/crypto";
+import { IFinishedTransactionJobResult } from './processor';
 
 export interface IAddTransactionResponse {
     transaction?: Interfaces.ITransaction;
@@ -12,8 +13,8 @@ export interface IConnection {
     make(): Promise<this>;
     disconnect(): void;
 
-    getPendingTickets(): string[];
-    getProcessedTickets(): any[];
+    hasPendingTicket(ticketId: string): boolean;
+    getProcessedTicket(ticketId: string): IFinishedTransactionJobResult | undefined;
 
     getPoolSize(): Promise<number>;
     getSenderSize(senderPublicKey: string): Promise<number>;

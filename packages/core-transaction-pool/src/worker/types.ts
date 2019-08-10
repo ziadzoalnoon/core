@@ -33,15 +33,6 @@ export interface IPendingTransactionJobResult {
     errors: { [key: string]: TransactionPool.ITransactionErrorResponse[] };
 }
 
-export interface IFinishedTransactionJobResult {
-    ticketId: string;
-    accept: string[];
-    broadcast: string[];
-    invalid: string[];
-    excess: string[];
-    errors: { [key: string]: TransactionPool.ITransactionErrorResponse[] };
-}
-
 export interface IQueuedTransactionJob extends ITransactionWorkerJob {
     ticketId: string;
 }

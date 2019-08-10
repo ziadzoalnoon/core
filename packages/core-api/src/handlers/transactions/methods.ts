@@ -1,5 +1,5 @@
 import { app } from "@arkecosystem/core-container";
-import { Database } from "@arkecosystem/core-interfaces";
+import { Database, TransactionPool } from "@arkecosystem/core-interfaces";
 import Boom from "@hapi/boom";
 import { ServerCache } from "../../services";
 import { paginate, respondWithResource, toPagination } from "../utils";
@@ -25,6 +25,25 @@ const show = async request => {
     return respondWithResource(transaction, "transaction", (request.query.transform as unknown) as boolean);
 };
 
+const showTicket = async request => {
+    const pool: TransactionPool.IConnection = app.resolvePlugin<TransactionPool.IConnection>("transaction-pool");
+
+    const ticketId: string = request.params.id;
+    const pending: boolean = pool.hasPendingTicket(ticketId);
+    const result: TransactionPool.IFinishedTransactionJobResult = pool.getProcessedTicket(ticketId);
+
+    if (!pending && !result) {
+        return Boom.notFound("Ticket not found.");
+    }
+
+    return {
+        data: {
+            pending: pending || undefined,
+            ...result,
+        },
+    }
+};
+
 const search = async request => {
     const transactions = await transactionsRepository.search({
         ...request.query,
@@ -46,5 +65,8 @@ export const registerMethods = server => {
             ...request.payload,
             ...request.query,
             ...paginate(request),
-        }));
+        }))
+        .method("v2.transactions.showTicket", showTicket, 8, request => ({
+            ...{ id: request.params.id },
+        }))
 };

@@ -70,6 +70,13 @@ export const show: object = {
     },
 };
 
+export const showTicket: object = {
+    params: {
+        id: Joi.string().uuid({ version: "uuidv4" })
+    },
+};
+
+
 export const unconfirmed: object = {
     query: {
         ...pagination,

@@ -42,10 +42,10 @@ export const registerRoutes = (server: Hapi.Server): void => {
 
     server.route({
         method: "GET",
-        path: "/transactions/unconfirmed",
-        handler: controller.unconfirmed,
+        path: "/transactions/tickets/{id}",
+        handler: controller.showTicket,
         options: {
-            validate: Schema.unconfirmed,
+            validate: Schema.showTicket,
         },
     });
 

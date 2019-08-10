@@ -10,12 +10,12 @@ import { dynamicFeeMatcher } from "./dynamic-fee";
 import { IDynamicFeeMatch } from "./interfaces";
 import { WalletManager } from "./wallet-manager";
 import { PoolBroker } from './worker/pool-broker';
-import { BrokerToWorker, IFinishedTransactionJobResult, IPendingTransactionJobResult } from './worker/types';
+import { BrokerToWorker, IPendingTransactionJobResult } from './worker/types';
 import { pushError } from './worker/utils';
 
 export class Processor {
     private pendingTickets: Map<string, boolean> = new Map();
-    private processedTickets: Map<string, IFinishedTransactionJobResult> = new Map();
+    private processedTickets: Map<string, TransactionPool.IFinishedTransactionJobResult> = new Map();
 
     private readonly poolBroker: PoolBroker;
     private readonly queue: async.AsyncQueue<{ job: IPendingTransactionJobResult }>;
@@ -51,9 +51,18 @@ export class Processor {
         return [...this.pendingTickets.keys()];
     }
 
-    public getProcessedTickets(): IFinishedTransactionJobResult[] {
+    public getProcessedTickets(): TransactionPool.IFinishedTransactionJobResult[] {
         return [...this.processedTickets.values()];
     }
+
+    public hasPendingTicket(ticketId: string): boolean {
+        return this.pendingTickets.has(ticketId);
+    }
+
+    public getProcessedTicket(ticketId: string): TransactionPool.IFinishedTransactionJobResult | undefined {
+        return this.processedTickets.get(ticketId);
+    }
+
 
     public async createTransactionsJob(transactions: Interfaces.ITransactionData[]): Promise<string> {
         // TODO: cache transactions
@@ -210,7 +219,7 @@ export class Processor {
     }
 
     private writeResult(pendingJob: IPendingTransactionJobResult, validTransactions: Interfaces.ITransaction[]): void {
-        const jobResult: IFinishedTransactionJobResult = {
+        const jobResult: TransactionPool.IFinishedTransactionJobResult = {
             ticketId: pendingJob.ticketId,
             accept: Object.keys(pendingJob.accept),
             broadcast: Object.keys(pendingJob.broadcast),
@@ -225,7 +234,7 @@ export class Processor {
         this.printStats(jobResult, validTransactions);
     }
 
-    private printStats(finishedJob: IFinishedTransactionJobResult, validTransactions: Interfaces.ITransaction[]): void {
+    private printStats(finishedJob: TransactionPool.IFinishedTransactionJobResult, validTransactions: Interfaces.ITransaction[]): void {
         const total: number = validTransactions.length + finishedJob.excess.length + finishedJob.invalid.length;
         const stats: string = ["accept", "broadcast", "excess", "invalid"]
             .map(prop => `${prop}: ${finishedJob[prop].length}`)

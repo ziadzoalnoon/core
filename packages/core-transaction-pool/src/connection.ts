@@ -11,7 +11,6 @@ import { Memory } from "./memory";
 import { Processor } from "./processor";
 import { Storage } from "./storage";
 import { WalletManager } from "./wallet-manager";
-import { IFinishedTransactionJobResult } from './worker/types';
 
 export class Connection implements TransactionPool.IConnection {
     // @TODO: make this private, requires some bigger changes to tests
@@ -172,10 +171,17 @@ export class Connection implements TransactionPool.IConnection {
         return this.processor.getPendingTickets();
     }
 
-    public getProcessedTickets(): IFinishedTransactionJobResult[] {
+    public getProcessedTickets(): TransactionPool.IFinishedTransactionJobResult[] {
         return this.processor.getProcessedTickets();
     }
 
+    public hasPendingTicket(ticketId: string): boolean {
+        return this.processor.hasPendingTicket(ticketId);
+    }
+
+    public getProcessedTicket(ticketId: string): TransactionPool.IFinishedTransactionJobResult | undefined {
+        return this.processor.getProcessedTicket(ticketId);
+    }
 
     // @TODO: move this to a more appropriate place
     public async hasExceededMaxTransactions(senderPublicKey: string): Promise<boolean> {

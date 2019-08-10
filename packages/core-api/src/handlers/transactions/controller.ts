@@ -41,6 +41,16 @@ export class TransactionsController extends Controller {
         }
     }
 
+    public async showTicket(request: Hapi.Request, h: Hapi.ResponseToolkit) {
+        try {
+            // @ts-ignore
+            const data = await request.server.methods.v2.transactions.showTicket(request);
+            return super.respondWithCache(data, h);
+        } catch (error) {
+            return Boom.badImplementation(error);
+        }
+    }
+
     public async unconfirmed(request: Hapi.Request, h: Hapi.ResponseToolkit) {
         try {
             const pagination = super.paginate(request);
