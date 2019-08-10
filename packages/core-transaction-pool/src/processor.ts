@@ -19,6 +19,7 @@ export class Processor {
         return new Processor(pool, walletManager).init();
     }
 
+    private cachedTransactionIds: Map<string, boolean> = new Map();
     private pendingTickets: Map<string, boolean> = new Map();
     private processedTickets: Map<string, TransactionPool.IFinishedTransactionJobResult> = new Map();
 
@@ -69,11 +70,15 @@ export class Processor {
     }
 
     public async createTransactionsJob(transactions: Interfaces.ITransactionData[]): Promise<string> {
-        // TODO: cache transactions
-
         const eligibleTransactions: Interfaces.ITransactionData[] = [];
         const senderWallets: Record<string, State.IWallet> = {};
         for (const transaction of transactions) {
+            if (this.cachedTransactionIds.has(transaction.id)) {
+                continue;
+            }
+
+            this.cachedTransactionIds.set(transaction.id, true);
+
             // TODO: optimize
             if (!(await this.preWorkerChecks(transaction))) {
                 continue;
@@ -245,6 +250,13 @@ export class Processor {
 
         this.pendingTickets.delete(jobResult.ticketId);
         this.processedTickets.set(jobResult.ticketId, jobResult);
+
+        // TODO: optimize
+        for (const ids of ["accept", "broadcast", "invalid", "excess"]) {
+            for (const id of jobResult[ids]) {
+                this.cachedTransactionIds.delete(id);
+            }
+        }
 
         this.printStats(jobResult, validTransactions);
     }

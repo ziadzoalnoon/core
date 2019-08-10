@@ -147,6 +147,6 @@ export const replySchemas = {
         type: "object",
     },
     "p2p.peer.postTransactions": {
-        type: "array",
+        type: "string",
     },
 };
