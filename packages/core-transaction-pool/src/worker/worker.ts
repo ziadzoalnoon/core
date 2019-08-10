@@ -7,7 +7,6 @@ import { delay } from "bluebird";
 import { expose } from "threads";
 import { Observable, Subject } from "threads/observable";
 import uuidv4 from "uuid/v4";
-import { parentPort } from "worker_threads";
 import {
     IPendingTransactionJobResult,
     IQueuedTransactionJob, ITransactionWorkerJob
@@ -41,10 +40,6 @@ export class PoolWorker {
         this.queue.drain(() => console.log("Transactions queue empty."));
 
         console.log("Started PoolWorker.");
-
-        parentPort.on("message", message => {
-            // console.log(message);
-        });
     }
 
     public getObservable(): Observable<IPendingTransactionJobResult> {
