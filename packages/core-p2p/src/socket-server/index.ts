@@ -4,7 +4,6 @@ import SocketCluster from "socketcluster";
 import { SocketErrors } from "../enums";
 import { requestSchemas } from "../schemas";
 import { ServerError } from "./errors";
-import { payloadProcessor } from "./payload-processor";
 import { getHeaders } from "./utils/get-headers";
 import { validate } from "./utils/validate";
 import * as handlers from "./versions";
@@ -78,8 +77,6 @@ export const startSocketServer = async (service: P2P.IPeerService, config: Recor
     const serverReadyPromise = new Promise((resolve, reject) => {
         server.on("ready", () => resolve(server));
     });
-
-    payloadProcessor.inject(server);
 
     return Promise.race([serverReadyPromise, timeoutPromise]);
 };
