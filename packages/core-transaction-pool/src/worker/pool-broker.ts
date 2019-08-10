@@ -22,7 +22,6 @@ export class PoolBroker {
     }
 
     public async sendToWorker(type: BrokerToWorker, data: any): Promise<any> {
-        console.log("Emitting to worker: " + type);
         return new Promise((resolve, reject) => {
             this.worker.postMessage({ type, data });
 
@@ -48,8 +47,6 @@ export class PoolBroker {
         this.sendToWorker(BrokerToWorker.Initialize, options);
 
         this.worker.on("message", (message: IMessageObject<WorkerToBroker>) => {
-            console.log("Worker message: " + message.type);
-
             switch (message.type) {
                 case WorkerToBroker.TicketId: {
                     break;

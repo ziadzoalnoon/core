@@ -18,9 +18,7 @@ export class PoolWorker {
 
     public constructor() {
         this.queue = async.queue(({ job }: { job: IQueuedTransactionJob }, cb) => {
-            const { transactions } = job;
-            console.log("queue processing: " + transactions.length);
-            delay(100)
+            delay(1)
                 .then(() => {
                     try {
                         return this.processTransactions(job, cb);
@@ -40,8 +38,6 @@ export class PoolWorker {
         console.log("Started PoolWorker.");
 
         parentPort.on("message", (message: IMessageObject<BrokerToWorker>) => {
-            console.log("Received message: " + message.type);
-
             switch (message.type) {
                 case BrokerToWorker.Initialize: {
                     this.options = message.data;
@@ -57,7 +53,6 @@ export class PoolWorker {
                 }
 
                 case BrokerToWorker.BlockHeightUpdate: {
-                    console.log("Setting height to: " + message.data);
                     Managers.configManager.setHeight(message.data);
                     break;
                 }

@@ -30,7 +30,7 @@ export class Processor {
                 `Received ticket ${ticketId} with ${validTransactions.length} valid transactions from worker.`,
             );
 
-            delay(100)
+            delay(10)
                 .then(() => {
                     try {
                         return this.finishTransactionJob(job, cb);
