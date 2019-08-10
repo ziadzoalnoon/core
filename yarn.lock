@@ -3204,6 +3204,11 @@
   version "12.0.12"
   resolved "https://registry.yarnpkg.com/@types/yargs/-/yargs-12.0.12.tgz#45dd1d0638e8c8f153e87d296907659296873916"
 
+"@types/zen-observable@^0.8.0":
+  version "0.8.0"
+  resolved "https://registry.yarnpkg.com/@types/zen-observable/-/zen-observable-0.8.0.tgz#8b63ab7f1aa5321248aad5ac890a485656dcea4d"
+  integrity sha512-te5lMAWii1uEJ4FwLjzdlbw3+n0FZNOvFXHxQDKeT0dilh7HOzdMzV2TrJVUzq8ep7J4Na8OUYPRLSQkJHAlrg==
+
 "@typeskrift/foreman@^0.2.1":
   version "0.2.1"
   resolved "https://registry.yarnpkg.com/@typeskrift/foreman/-/foreman-0.2.1.tgz#0e1e25bd8f4a13a6afcb234a175d361165d89f30"
@@ -4100,7 +4105,7 @@ callsites@^2.0.0:
   version "2.0.0"
   resolved "https://registry.yarnpkg.com/callsites/-/callsites-2.0.0.tgz#06eb84f00eea413da86affefacbffb36093b3c50"
 
-callsites@^3.0.0:
+callsites@^3.0.0, callsites@^3.1.0:
   version "3.1.0"
   resolved "https://registry.yarnpkg.com/callsites/-/callsites-3.1.0.tgz#b3630abd8943432f54b3f0519238e33cd7df2f73"
 
@@ -5502,6 +5507,11 @@ escodegen@1.x.x, escodegen@^1.9.1:
     optionator "^0.8.1"
   optionalDependencies:
     source-map "~0.6.1"
+
+esm@^3.2.22:
+  version "3.2.25"
+  resolved "https://registry.yarnpkg.com/esm/-/esm-3.2.25.tgz#342c18c29d56157688ba5ce31f8431fbb795cc10"
+  integrity sha512-U1suiZ2oDVWv4zPO56S0NcR5QriEahGtdN2OR6FiOG4WJvcjBVFB0qI4+eKoWFH483PKGuLuu6V8Z4T5g63UVA==
 
 esprima@3.x.x, esprima@^3.1.3:
   version "3.1.3"
@@ -11557,6 +11567,19 @@ thirty-two@1.0.2:
   version "1.0.2"
   resolved "https://registry.yarnpkg.com/thirty-two/-/thirty-two-1.0.2.tgz#4ca2fffc02a51290d2744b9e3f557693ca6b627a"
 
+threads@^1.0.0-beta.3:
+  version "1.0.0-beta.3"
+  resolved "https://registry.yarnpkg.com/threads/-/threads-1.0.0-beta.3.tgz#4770730aa6280051fcd1d9cb5e506450cf7ac274"
+  integrity sha512-y12E1Vk6RKwZt50kQo0EyRHLiuMChnk/zEwssJp19FWnxHaKZVIsa5EMPffm7LSWE6qEFzamjqplnSSI4Fp1ww==
+  dependencies:
+    "@types/zen-observable" "^0.8.0"
+    callsites "^3.1.0"
+    debug "^4.1.1"
+    is-observable "^1.1.0"
+    zen-observable "^0.8.14"
+  optionalDependencies:
+    tiny-worker ">= 2"
+
 throat@^4.0.0:
   version "4.1.0"
   resolved "https://registry.yarnpkg.com/throat/-/throat-4.1.0.tgz#89037cbc92c56ab18926e6ba4cbb200e15672a6a"
@@ -11609,6 +11632,13 @@ tiny-secp256k1@^1.1.0:
     elliptic "^6.4.0"
   optionalDependencies:
     tiny-secp256k1-native "1.1.x"
+
+"tiny-worker@>= 2", tiny-worker@^2.2.0:
+  version "2.2.0"
+  resolved "https://registry.yarnpkg.com/tiny-worker/-/tiny-worker-2.2.0.tgz#056ce92d424c8d2c6f9fb8f9a5d2e3cdcb908bca"
+  integrity sha512-/DnTni0fPjjOlqA6BNcUo6pxyfbViJZ7vxwA+RZ+gF0dBevxp0sropQFVZ4NS5PRgQ8J7EBu8zMJYKwoNo5aWg==
+  dependencies:
+    esm "^3.2.22"
 
 tmp@0.0.33, tmp@0.0.x, tmp@^0.0.33:
   version "0.0.33"
@@ -12464,3 +12494,8 @@ yargs@^3.19.0:
 yarn@^1.15.0:
   version "1.15.2"
   resolved "https://registry.yarnpkg.com/yarn/-/yarn-1.15.2.tgz#7a064ca81ca34235f16376ad2f796ed432f9e285"
+
+zen-observable@^0.8.14:
+  version "0.8.14"
+  resolved "https://registry.yarnpkg.com/zen-observable/-/zen-observable-0.8.14.tgz#d33058359d335bc0db1f0af66158b32872af3bf7"
+  integrity sha512-kQz39uonEjEESwh+qCi83kcC3rZJGh4mrZW7xjkSQYXkq//JZHTtKo+6yuVloTgMtzsIWOJrjIrKvk/dqm0L5g==

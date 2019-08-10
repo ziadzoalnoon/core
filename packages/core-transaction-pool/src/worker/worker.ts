@@ -4,19 +4,24 @@ import { Handlers } from "@arkecosystem/core-transactions";
 import { Crypto, Errors, Interfaces, Managers, Transactions } from "@arkecosystem/crypto";
 import async from "async";
 import { delay } from "bluebird";
+import { expose } from "threads";
+import { Observable, Subject } from "threads/observable";
 import uuidv4 from "uuid/v4";
 import { parentPort } from "worker_threads";
 import {
-    BrokerToWorker, IMessageObject, IPendingTransactionJobResult,
-    IQueuedTransactionJob, ITransactionWorkerJob, WorkerToBroker
+    IPendingTransactionJobResult,
+    IQueuedTransactionJob, ITransactionWorkerJob
 } from './types';
 import { pushError } from './utils';
 
 export class PoolWorker {
+    private results: Subject<IPendingTransactionJobResult>;
     private options: Record<string, any>;
     private queue: async.AsyncQueue<{ job: IQueuedTransactionJob }>;
 
     public constructor() {
+        this.results = new Subject();
+
         this.queue = async.queue(({ job }: { job: IQueuedTransactionJob }, cb) => {
             delay(1)
                 .then(() => {
@@ -37,38 +42,29 @@ export class PoolWorker {
 
         console.log("Started PoolWorker.");
 
-        parentPort.on("message", (message: IMessageObject<BrokerToWorker>) => {
-            switch (message.type) {
-                case BrokerToWorker.Initialize: {
-                    this.options = message.data;
-                    console.log("Setting network: " + this.options.networkName);
-                    Managers.configManager.setFromPreset(this.options.networkName);
-                    break;
-                }
-
-                case BrokerToWorker.CreateJob: {
-                    const ticketId: string = this.addTransactionsToQueue(message.data);
-                    this.sendToBroker(WorkerToBroker.TicketId, ticketId);
-                    break;
-                }
-
-                case BrokerToWorker.BlockHeightUpdate: {
-                    Managers.configManager.setHeight(message.data);
-                    break;
-                }
-
-                default: {
-                    console.log("Unknown message: " + message.type);
-                    this.sendToBroker(WorkerToBroker.Unknown, message.type);
-                }
-            }
+        parentPort.on("message", message => {
+            // console.log(message);
         });
     }
 
-    private addTransactionsToQueue(job: ITransactionWorkerJob): string {
+    public getObservable(): Observable<IPendingTransactionJobResult> {
+        return Observable.from(this.results);
+    }
+
+    public createJob(job: ITransactionWorkerJob): string {
         const ticketId: string = uuidv4();
         this.queue.push({ job: { ...job, ticketId } });
         return ticketId;
+    }
+
+    public configure(options: any): void {
+        this.options = options;
+        Managers.configManager.setFromPreset(this.options.networkName);
+        this.updateBlockHeight(this.options.lastHeight);
+    }
+
+    public updateBlockHeight(height: number): void {
+        Managers.configManager.setHeight(height);
     }
 
     private async processTransactions(job: IQueuedTransactionJob, cb: any): Promise<void> {
@@ -127,9 +123,7 @@ export class PoolWorker {
             }
         }
 
-        console.log("Processed " + result.validTransactions.length + " valid transactions.");
-        this.sendToBroker(WorkerToBroker.TransactionJobResult, result);
-
+        this.results.next(result);
         return cb(result);
     }
 
@@ -179,19 +173,17 @@ export class PoolWorker {
 
         return true;
     }
-
-    private sendToBroker(type: WorkerToBroker, data: any): void {
-        parentPort.postMessage({ type, data });
-    }
 }
 
-// tslint:disable-next-line: no-unused-expression
-new PoolWorker();
+const poolWorker = new PoolWorker();
 
-const keepAlive = async () => {
-    return delay(50000);
-};
+export type WorkerApi = Pick<PoolWorker, "configure" | "createJob" | "getObservable" | "updateBlockHeight">
 
-(async () => {
-    await keepAlive();
-})();
+const workerApi: WorkerApi = {
+    configure: (options: any) => poolWorker.configure(options),
+    createJob: (job: ITransactionWorkerJob) => poolWorker.createJob(job),
+    getObservable: () => poolWorker.getObservable(),
+    updateBlockHeight: (height: number) => poolWorker.updateBlockHeight(height),
+}
+
+expose(workerApi);

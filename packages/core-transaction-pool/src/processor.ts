@@ -10,17 +10,22 @@ import { dynamicFeeMatcher } from "./dynamic-fee";
 import { IDynamicFeeMatch } from "./interfaces";
 import { WalletManager } from "./wallet-manager";
 import { PoolBroker } from './worker/pool-broker';
-import { BrokerToWorker, IPendingTransactionJobResult } from './worker/types';
+import { IPendingTransactionJobResult } from './worker/types';
 import { pushError } from './worker/utils';
 
 export class Processor {
+
+    public static async make(pool: TransactionPool.IConnection, walletManager: WalletManager): Promise<Processor> {
+        return new Processor(pool, walletManager).init();
+    }
+
     private pendingTickets: Map<string, boolean> = new Map();
     private processedTickets: Map<string, TransactionPool.IFinishedTransactionJobResult> = new Map();
 
     private readonly poolBroker: PoolBroker;
     private readonly queue: async.AsyncQueue<{ job: IPendingTransactionJobResult }>;
 
-    public constructor(private readonly pool: TransactionPool.IConnection, private readonly walletManager: WalletManager) {
+    private constructor(private readonly pool: TransactionPool.IConnection, private readonly walletManager: WalletManager) {
         this.poolBroker = new PoolBroker((job: IPendingTransactionJobResult) => this.queue.push({ job }));
 
         this.queue = async.queue(({ job }: { job: IPendingTransactionJobResult }, cb) => {
@@ -63,7 +68,6 @@ export class Processor {
         return this.processedTickets.get(ticketId);
     }
 
-
     public async createTransactionsJob(transactions: Interfaces.ITransactionData[]): Promise<string> {
         // TODO: cache transactions
 
@@ -81,14 +85,19 @@ export class Processor {
             eligibleTransactions.push(transaction);
         }
 
-        const ticketId: string = (await this.poolBroker.sendToWorker(BrokerToWorker.CreateJob, {
+        const ticketId: string = await this.poolBroker.createJob({
             transactions: eligibleTransactions,
             senderWallets,
-        })).data;
+        });
 
         this.pendingTickets.set(ticketId, true);
 
         return ticketId;
+    }
+
+    private async init(): Promise<this> {
+        await this.poolBroker.init();
+        return this;
     }
 
     private async finishTransactionJob(pendingJob: IPendingTransactionJobResult, cb: any): Promise<void> {

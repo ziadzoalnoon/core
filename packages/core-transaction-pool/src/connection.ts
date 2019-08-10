@@ -26,7 +26,7 @@ export class Connection implements TransactionPool.IConnection {
     private readonly emitter: EventEmitter.EventEmitter = app.resolvePlugin<EventEmitter.EventEmitter>("event-emitter");
     private readonly logger: Logger.ILogger = app.resolvePlugin<Logger.ILogger>("logger");
 
-    private readonly processor: Processor;
+    private processor: Processor;
 
     constructor({
         options,
@@ -43,12 +43,12 @@ export class Connection implements TransactionPool.IConnection {
         this.walletManager = walletManager;
         this.memory = memory;
         this.storage = storage;
-        this.processor = new Processor(this, this.walletManager);
     }
 
     public async make(): Promise<this> {
         this.memory.flush();
         this.storage.connect(this.options.storage);
+        this.processor = await Processor.make(this, this.walletManager);
 
         let transactionsFromDisk: Interfaces.ITransaction[] = this.storage.loadAll();
         for (const transaction of transactionsFromDisk) {

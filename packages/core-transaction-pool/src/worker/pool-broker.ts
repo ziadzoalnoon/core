@@ -2,74 +2,42 @@ import { app } from "@arkecosystem/core-container";
 import { ApplicationEvents } from "@arkecosystem/core-event-emitter";
 import { EventEmitter } from "@arkecosystem/core-interfaces";
 import { Interfaces, Managers } from "@arkecosystem/crypto";
-import { Worker } from "worker_threads";
-import { BrokerToWorker, IMessageObject, IPendingTransactionJobResult, WorkerToBroker } from './types';
+import { ModuleThread, spawn, Worker } from "threads"
+import { IPendingTransactionJobResult, ITransactionWorkerJob } from './types';
+import { WorkerApi } from './worker';
 
 export type FinishedJobCallback = (job: IPendingTransactionJobResult) => void;
 
 export class PoolBroker {
-    private worker: Worker;
+    private worker: ModuleThread<WorkerApi>;
 
     public constructor(private readonly finishedJobCallback: FinishedJobCallback) {
-        this.setupWorker();
-
         app.resolvePlugin<EventEmitter.EventEmitter>("event-emitter").on(
             ApplicationEvents.BlockApplied,
             (data: Interfaces.IBlockData) => {
-                this.sendToWorker(BrokerToWorker.BlockHeightUpdate, data.height);
+                this.worker.updateBlockHeight(data.height);
             },
         );
     }
 
-    public async sendToWorker(type: BrokerToWorker, data: any): Promise<any> {
-        return new Promise((resolve, reject) => {
-            this.worker.postMessage({ type, data });
+    public async init(): Promise<void> {
+        this.worker = await spawn<WorkerApi>(new Worker("./worker.js"))
 
-            this.worker.once("message", data => {
-                resolve(data);
-            });
-            this.worker.once("error", error => reject(error));
+        // @ts-ignore
+        this.worker.getObservable().subscribe((pendingJob: IPendingTransactionJobResult) => {
+            this.finishedJobCallback(pendingJob);
         });
-    }
-
-    private setupWorker(): void {
-        if (this.worker) {
-            this.worker.terminate();
-        }
-
-        this.worker = new Worker("../core-transaction-pool/dist/worker/worker.js");
 
         const options: Record<string, any> = ({
             ...app.resolveOptions("transaction-pool"),
-            networkName: Managers.configManager.get("network.name")
+            networkName: Managers.configManager.get("network.name"),
+            lastHeight: Managers.configManager.getHeight(),
         });
 
-        this.sendToWorker(BrokerToWorker.Initialize, options);
+        await this.worker.configure(options);
+    }
 
-        this.worker.on("message", (message: IMessageObject<WorkerToBroker>) => {
-            switch (message.type) {
-                case WorkerToBroker.TicketId: {
-                    break;
-                }
-                case WorkerToBroker.TransactionJobResult: {
-                    this.finishedJobCallback(message.data);
-                    break;
-                }
-                default: {
-                    //
-                }
-            }
-        });
-
-        this.worker.on("error", e => {
-            console.log(e.stack);
-        });
-
-        this.worker.on("exit", code => {
-            console.log("Worker exittng...");
-            if (code !== 0) {
-                console.log(code);
-            }
-        });
+    public async createJob(job: ITransactionWorkerJob): Promise<string> {
+        return this.worker.createJob(job);
     }
 }
