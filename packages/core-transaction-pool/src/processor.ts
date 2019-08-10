@@ -1,5 +1,5 @@
 import { app } from "@arkecosystem/core-container";
-import { Database, Logger, State, TransactionPool } from "@arkecosystem/core-interfaces";
+import { Database, Logger, P2P, State, TransactionPool } from "@arkecosystem/core-interfaces";
 import { Handlers } from "@arkecosystem/core-transactions";
 import { Interfaces, Transactions } from "@arkecosystem/crypto";
 import assert from "assert";
@@ -109,6 +109,12 @@ export class Processor {
         await this.removeForgedTransactions(pendingJob);
         await this.addToTransactionPool(acceptedTransactions, pendingJob);
 
+        if (Object.keys(pendingJob.broadcast).length > 0) {
+            app.resolvePlugin<P2P.IPeerService>("p2p")
+                .getMonitor()
+                .broadcastTransactions(Object.values(pendingJob.broadcast));
+        }
+
         this.writeResult(pendingJob, acceptedTransactions);
 
         return cb();
@@ -159,11 +165,11 @@ export class Processor {
                     }
 
                     if (dynamicFee.enterPool) {
-                        pendingJob.accept[transaction.id] = true;
+                        pendingJob.accept[transaction.id] = transaction;
                     }
 
                     if (dynamicFee.broadcast) {
-                        pendingJob.broadcast[transaction.id] = true;
+                        pendingJob.broadcast[transaction.id] = transaction;
                     }
 
                     acceptedTransactions.push(transaction);
@@ -211,7 +217,7 @@ export class Processor {
     }
 
     private async addToTransactionPool(transactions: Interfaces.ITransaction[], pendingJob: IPendingTransactionJobResult): Promise<void> {
-        const { notAdded } = await this.pool.addTransactions(transactions.filter(({ id }) => pendingJob.accept[id]));
+        const { notAdded } = await this.pool.addTransactions(transactions.filter(({ id }) => !!pendingJob.accept[id]));
 
         for (const item of notAdded) {
             delete pendingJob.accept[item.transaction.id];

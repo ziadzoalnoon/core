@@ -26,8 +26,8 @@ export interface ITransactionWorkerJob {
 export interface IPendingTransactionJobResult {
     ticketId: string;
     validTransactions: Array<{ buffer: Buffer, id: string }>;
-    accept?: { [id: string]: boolean };
-    broadcast?: { [id: string]: boolean };
+    accept?: { [id: string]: Interfaces.ITransaction };
+    broadcast?: { [id: string]: Interfaces.ITransaction };
     invalid: { [id: string]: boolean };
     excess: { [id: string]: boolean };
     errors: { [key: string]: TransactionPool.ITransactionErrorResponse[] };
