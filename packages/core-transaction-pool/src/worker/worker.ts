@@ -2,8 +2,8 @@ import { State } from "@arkecosystem/core-interfaces";
 import { Wallets } from "@arkecosystem/core-state";
 import { Handlers } from "@arkecosystem/core-transactions";
 import { Crypto, Errors, Interfaces, Managers, Transactions } from "@arkecosystem/crypto";
-import async from "async";
-import { delay } from "bluebird";
+import debounceFn, { DebouncedFunction } from "debounce-fn";
+import PQueue from 'p-queue';
 import { expose } from "threads";
 import { Observable, Subject } from "threads/observable";
 import {
@@ -13,40 +13,41 @@ import {
 import { pushError } from './utils';
 
 export class PoolWorker {
-    private results: Subject<IPendingTransactionJobResult>;
     private options: Record<string, any>;
-    private queue: async.AsyncQueue<{ job: ITransactionWorkerJob }>;
+    private observable: Subject<IPendingTransactionJobResult>;
+    private queue: PQueue = new PQueue({ concurrency: 1 });
 
+    private jobResultDebouncer: DebouncedFunction<any, any>;
+    private finishedJobs: IPendingTransactionJobResult[];
     public constructor() {
-        this.results = new Subject();
+        this.observable = new Subject();
 
-        this.queue = async.queue(({ job }: { job: ITransactionWorkerJob }, cb) => {
-            delay(1)
-                .then(() => {
-                    try {
-                        return this.processTransactions(job, cb);
-                    } catch (error) {
-                        console.log(error.stack);
-                        return cb();
-                    }
-                })
-                .catch(error => {
-                    console.log(error.stack);
-                    return cb();
-                });
-        });
+        this.finishedJobs = [];
+        this.jobResultDebouncer = debounceFn(async () => {
+            if (this.finishedJobs.length > 0) {
+                this.observable.next(this.finishedJobs.shift());
+            }
 
-        this.queue.drain(() => console.log("Transactions queue empty."));
+            await this.queue.onIdle();
+            this.jobResultDebouncer();
+
+        }, { wait: 50, immediate: true });
 
         console.log("Started PoolWorker.");
     }
 
     public getObservable(): Observable<IPendingTransactionJobResult> {
-        return Observable.from(this.results);
+        return Observable.from(this.observable);
     }
 
     public createJob(job: ITransactionWorkerJob): void {
-        this.queue.push({ job });
+        this.queue.add(async () => {
+            try {
+                return this.processJob(job);
+            } catch (error) {
+                console.log(error.stack);
+            }
+        });
     }
 
     public configure(options: any): void {
@@ -59,7 +60,7 @@ export class PoolWorker {
         Managers.configManager.setHeight(height);
     }
 
-    private async processTransactions(job: ITransactionWorkerJob, cb: any): Promise<void> {
+    private async processJob(job: ITransactionWorkerJob): Promise<void> {
         const { transactions, senderWallets } = job;
 
         const result: IPendingTransactionJobResult = {
@@ -115,8 +116,8 @@ export class PoolWorker {
             }
         }
 
-        this.results.next(result);
-        return cb(result);
+        this.finishedJobs.push(result);
+        this.jobResultDebouncer();
     }
 
     private performBasicTransactionChecks(result: IPendingTransactionJobResult, transaction: Interfaces.ITransactionData): boolean {

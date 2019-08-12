@@ -77,7 +77,7 @@ export class Connection implements TransactionPool.IConnection {
     }
 
     public async createTransactionsJob(transactions: Interfaces.ITransactionData[]): Promise<string> {
-        return this.processor.createTransactionsJob(transactions);
+        return this.processor.enqueueTransactions(transactions);
     }
 
     public async getTransactionsByType(type: number): Promise<Set<Interfaces.ITransaction>> {
@@ -415,6 +415,11 @@ export class Connection implements TransactionPool.IConnection {
             return { transaction, type: "ERR_ALREADY_IN_POOL", message: "Already in pool" };
         }
 
+        //   if (await this.hasExceededMaxTransactions(transaction.senderPublicKey)) {
+        //       jobResult.excess[transaction.id] = true;
+        //      return { transaction, type: "ERR_MAX_EXCEEDED", message: "Reached transactions per sender limit."};
+        //  }
+
         const poolSize: number = this.memory.count();
 
         if (this.options.maxTransactionsInPool <= poolSize) {
@@ -445,7 +450,14 @@ export class Connection implements TransactionPool.IConnection {
 
         try {
             await this.walletManager.throwIfCannotBeApplied(transaction);
-            await Handlers.Registry.get(transaction.type, transaction.typeGroup).applyToSender(
+
+            const handler: Handlers.TransactionHandler = Handlers.Registry.get(transaction.type, transaction.typeGroup);
+
+            if (!(await handler.canEnterTransactionPool(transaction.data, this, undefined))) {
+                return { type: "ERR_REFUSED", message: "Cannot enter transaction pool." };
+            }
+
+            await handler.applyToSender(
                 transaction,
                 this.walletManager,
             );

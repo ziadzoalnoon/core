@@ -1,14 +1,15 @@
 import { app } from "@arkecosystem/core-container";
 import { Database, Logger, P2P, State, TransactionPool } from "@arkecosystem/core-interfaces";
-import { Handlers } from "@arkecosystem/core-transactions";
 import { Interfaces, Transactions } from "@arkecosystem/crypto";
 import assert from "assert";
-import async from "async";
-import { delay } from 'bluebird';
+import debounceFn, { DebouncedFunction } from "debounce-fn";
+import delay from "delay";
+import chunk from "lodash.chunk";
+import PQueue from "p-queue";
 import pluralize from "pluralize";
 import uuidv4 from "uuid/v4";
 import { dynamicFeeMatcher } from "./dynamic-fee";
-import { IDynamicFeeMatch } from "./interfaces";
+import { IDynamicFeeMatch, ITransactionsCached } from "./interfaces";
 import { WalletManager } from "./wallet-manager";
 import { PoolBroker } from './worker/pool-broker';
 import { IPendingTransactionJobResult } from './worker/types';
@@ -20,39 +21,37 @@ export class Processor {
         return new Processor(pool, walletManager).init();
     }
 
-    private cachedTransactionIds: Map<string, boolean> = new Map();
-    private partialTickets: Map<string, IPendingTransactionJobResult> = new Map();
-    private pendingTickets: Map<string, boolean> = new Map();
-    private processedTickets: Map<string, TransactionPool.IFinishedTransactionJobResult> = new Map();
+    private readonly pendingTickets: Map<string, boolean> = new Map();
+    private readonly processedTickets: Map<string, TransactionPool.IFinishedTransactionJobResult> = new Map();
+
+    private readonly broadcastDebouncer: DebouncedFunction<any, any>;
+    private readonly readyForBroadcast: Interfaces.ITransaction[] = [];
 
     private readonly poolBroker: PoolBroker;
-    private readonly queue: async.AsyncQueue<{ job: IPendingTransactionJobResult }>;
+    private readonly postWorkerQueue: PQueue = new PQueue({ concurrency: 1 });
 
     private constructor(private readonly pool: TransactionPool.IConnection, private readonly walletManager: WalletManager) {
-        this.poolBroker = new PoolBroker((job: IPendingTransactionJobResult) => this.queue.push({ job }));
-
-        this.queue = async.queue(({ job }: { job: IPendingTransactionJobResult }, cb) => {
-            const { ticketId, validTransactions, } = job;
-
-            app.resolvePlugin<Logger.ILogger>("logger").debug(
-                `Received ticket ${ticketId} with ${validTransactions.length} valid transactions from worker.`,
-            );
-
-            delay(10)
-                .then(() => {
-                    try {
-                        return this.finishTransactionJob(job, cb);
-                    } catch (error) {
-                        console.log(error.stack);
-                        return cb();
-                    }
-                })
-                .catch(error => {
-                    console.log(error.stack);
-                    return cb();
-                });
+        this.poolBroker = new PoolBroker((job: IPendingTransactionJobResult) => {
+            this.postWorkerQueue.add(async () => this.postWorkerQueueTask(job))
         });
 
+        this.broadcastDebouncer = debounceFn(async () => {
+            const batchSize: number = app.resolveOptions("transaction-pool").maxTransactionsPerRequest;
+            const transactions: Interfaces.ITransaction[] = this.readyForBroadcast.splice(0, batchSize * 3)
+
+            for (const batch of chunk(transactions, batchSize)) {
+                app.resolvePlugin<P2P.IPeerService>("p2p")
+                    .getMonitor()
+                    .broadcastTransactions(batch);
+            }
+
+            await this.postWorkerQueue.onIdle();
+            this.broadcastDebouncer();
+        }, { wait: 300, immediate: true })
+
+        this.postWorkerQueue.on('active', () => {
+            //  console.log(`PostSize: ${this.postWorkerQueue.size}  Pending: ${this.postWorkerQueue.pending}`);
+        });
     }
 
     public getPendingTickets(): string[] {
@@ -71,60 +70,45 @@ export class Processor {
         return this.processedTickets.get(ticketId);
     }
 
-    public async createTransactionsJob(transactions: Interfaces.ITransactionData[]): Promise<string> {
-        const eligibleTransactions: Interfaces.ITransactionData[] = [];
-        const partialPendingJobResult: IPendingTransactionJobResult = {
-            ticketId: "",
-            invalid: {},
-            excess: {},
-            errors: {},
-            accept: {},
-            broadcast: {},
-            validTransactions: [],
-        };
+    public async enqueueTransactions(transactions: Interfaces.ITransactionData[]): Promise<string> {
+        await delay(1);
 
         const senderWallets: Record<string, State.IWallet> = {};
-        for (const transaction of transactions) {
-            if (this.cachedTransactionIds.has(transaction.id)) {
-                continue;
-            }
+        const { added }: ITransactionsCached = app
+            .resolvePlugin<State.IStateService>("state")
+            .getStore()
+            .cacheTransactions(transactions);
 
-            this.cachedTransactionIds.set(transaction.id, true);
-
-            // TODO: optimize
-            if (!await this.preWorkerChecks(transaction, partialPendingJobResult)) {
-                continue;
-            }
-
+        for (const transaction of added) {
+            // TODO: cold wallet check
             const senderWallet: State.IWallet = this.walletManager.findByPublicKey(transaction.senderPublicKey);
             senderWallets[transaction.senderPublicKey] = senderWallet;
-
-            eligibleTransactions.push(transaction);
         }
 
-        const ticketId: string = uuidv4();
-        partialPendingJobResult.ticketId = ticketId;
-
-        if (eligibleTransactions.length === 0) {
-            this.writeResult(partialPendingJobResult, []);
-
-        } else {
+        let ticketId: string = "";
+        if (added.length > 0) {
+            ticketId = uuidv4();
             this.pendingTickets.set(ticketId, true);
 
-            // If the payload contained some invalid transactions store them temporary
-            // and merge them into the result once the job finishes.
-            if (Object.keys(partialPendingJobResult.errors).length > 0 || Object.keys(partialPendingJobResult.excess).length > 0) {
-                this.partialTickets.set(ticketId, undefined);
-            }
-
-            await this.poolBroker.createJob({
-                ticketId,
-                transactions: eligibleTransactions,
-                senderWallets,
+            setImmediate(() => {
+                this.poolBroker.createJob({
+                    senderWallets,
+                    transactions,
+                    ticketId
+                });
             });
         }
 
         return ticketId;
+    }
+
+    private async postWorkerQueueTask(job: IPendingTransactionJobResult): Promise<void> {
+        try {
+            await delay(10) // TODO: throttle
+            return this.finishTransactionJob(job);
+        } catch (error) {
+            console.log(error.stack);
+        }
     }
 
     private async init(): Promise<this> {
@@ -132,7 +116,7 @@ export class Processor {
         return this;
     }
 
-    private async finishTransactionJob(pendingJob: IPendingTransactionJobResult, cb: any): Promise<void> {
+    private async finishTransactionJob(pendingJob: IPendingTransactionJobResult): Promise<void> {
         pendingJob.accept = {};
         pendingJob.broadcast = {};
 
@@ -141,50 +125,10 @@ export class Processor {
         await this.removeForgedTransactions(pendingJob);
         await this.addToTransactionPool(acceptedTransactions, pendingJob);
 
-        if (Object.keys(pendingJob.broadcast).length > 0) {
-            app.resolvePlugin<P2P.IPeerService>("p2p")
-                .getMonitor()
-                .broadcastTransactions(Object.values(pendingJob.broadcast));
-        }
+        const broadcastBatch: Interfaces.ITransaction[] = this.writeResult(pendingJob, acceptedTransactions);
+        this.readyForBroadcast.push(...broadcastBatch);
 
-        this.writeResult(pendingJob, acceptedTransactions);
-
-        return cb();
-    }
-
-    private async preWorkerChecks(transaction: Interfaces.ITransactionData, jobResult: IPendingTransactionJobResult): Promise<boolean> {
-        try {
-
-            if (await this.pool.has(transaction.id)) {
-                pushError(jobResult, transaction.id, {
-                    type: "ERR_DUPLICATE",
-                    message: `Duplicate transaction ${transaction.id}`
-                });
-
-                return false;
-            }
-
-            // if (await this.pool.hasExceededMaxTransactions(transaction.senderPublicKey)) {
-            //   jobResult.excess[transaction.id] = true;
-            //  return false;
-            // }
-
-            const handler: Handlers.TransactionHandler = Handlers.Registry.get(transaction.type, transaction.typeGroup);
-
-            if (!(await handler.canEnterTransactionPool(transaction, this.pool, undefined))) {
-                return false;
-            }
-
-            return true;
-
-        } catch (error) {
-            pushError(jobResult, transaction.id, {
-                type: "ERR_UNKNOWN",
-                message: error.message
-            });
-
-            return false;
-        }
+        this.broadcastDebouncer();
     }
 
     private async performWalletChecks(pendingJob: IPendingTransactionJobResult): Promise<Interfaces.ITransaction[]> {
@@ -276,7 +220,7 @@ export class Processor {
         }
     }
 
-    private writeResult(pendingJob: IPendingTransactionJobResult, validTransactions: Interfaces.ITransaction[]): void {
+    private writeResult(pendingJob: IPendingTransactionJobResult, validTransactions: Interfaces.ITransaction[]): Interfaces.ITransaction[] {
         const jobResult: TransactionPool.IFinishedTransactionJobResult = {
             ticketId: pendingJob.ticketId,
             accept: Object.keys(pendingJob.accept),
@@ -286,30 +230,12 @@ export class Processor {
             errors: Object.keys(pendingJob.errors).length > 0 ? pendingJob.errors : undefined,
         }
 
-        const partialResult: IPendingTransactionJobResult = this.partialTickets.get(jobResult.ticketId);
-        if (partialResult !== undefined) {
-            jobResult.invalid = {
-                ...jobResult.invalid,
-                ...Object.keys(partialResult.invalid),
-            };
-
-            // TODO: merge errors too
-
-            jobResult.excess = Object.keys(partialResult.excess);
-        }
-
-        this.partialTickets.delete(jobResult.ticketId);
         this.pendingTickets.delete(jobResult.ticketId);
         this.processedTickets.set(jobResult.ticketId, jobResult);
 
-        // TODO: optimize
-        for (const ids of ["accept", "broadcast", "invalid", "excess"]) {
-            for (const id of jobResult[ids]) {
-                this.cachedTransactionIds.delete(id);
-            }
-        }
-
         this.printStats(jobResult, validTransactions);
+
+        return Object.values(pendingJob.broadcast);
     }
 
     private printStats(finishedJob: TransactionPool.IFinishedTransactionJobResult, validTransactions: Interfaces.ITransaction[]): void {

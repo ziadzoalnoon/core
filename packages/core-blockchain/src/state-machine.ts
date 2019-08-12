@@ -246,8 +246,13 @@ blockchainMachine.actionMap = (blockchain: Blockchain) => ({
             if (empty) {
                 logger.info("No new block found on this peer");
             } else {
-                logger.warn(`Downloaded block not accepted: ${JSON.stringify(blocks[0])}`);
-                logger.warn(`Last downloaded block: ${JSON.stringify(lastDownloadedBlock)}`);
+                {
+                    const { height, id, previousBlock, numberOfTransactions } = blocks[0];
+                    logger.warn(`Downloaded block not accepted (height: ${height} id: ${id} previous: ${previousBlock} transactions: ${numberOfTransactions})`);
+                }
+
+                const { height, id, previousBlock, numberOfTransactions } = lastDownloadedBlock;
+                logger.warn(`Last downloaded block (height: ${height} id: ${id} previous: ${previousBlock} transactions: ${numberOfTransactions})`);
 
                 blockchain.clearQueue();
             }

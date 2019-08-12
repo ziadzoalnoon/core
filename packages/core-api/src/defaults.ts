@@ -28,7 +28,7 @@ export const defaults = {
     },
     // @see https://github.com/wraithgar/hapi-rate-limit
     rateLimit: {
-        enabled: !process.env.CORE_API_RATE_LIMIT,
+        enabled: false,
         pathLimit: false,
         userLimit: process.env.CORE_API_RATE_LIMIT_USER_LIMIT || 300,
         userCache: {
