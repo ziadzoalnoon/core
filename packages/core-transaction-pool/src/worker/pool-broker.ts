@@ -37,7 +37,7 @@ export class PoolBroker {
         await this.worker.configure(options);
     }
 
-    public async createJob(job: ITransactionWorkerJob): Promise<string> {
+    public async createJob(job: ITransactionWorkerJob): Promise<void> {
         return this.worker.createJob(job);
     }
 }

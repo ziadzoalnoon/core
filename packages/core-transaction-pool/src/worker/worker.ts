@@ -6,22 +6,21 @@ import async from "async";
 import { delay } from "bluebird";
 import { expose } from "threads";
 import { Observable, Subject } from "threads/observable";
-import uuidv4 from "uuid/v4";
 import {
     IPendingTransactionJobResult,
-    IQueuedTransactionJob, ITransactionWorkerJob
+    ITransactionWorkerJob
 } from './types';
 import { pushError } from './utils';
 
 export class PoolWorker {
     private results: Subject<IPendingTransactionJobResult>;
     private options: Record<string, any>;
-    private queue: async.AsyncQueue<{ job: IQueuedTransactionJob }>;
+    private queue: async.AsyncQueue<{ job: ITransactionWorkerJob }>;
 
     public constructor() {
         this.results = new Subject();
 
-        this.queue = async.queue(({ job }: { job: IQueuedTransactionJob }, cb) => {
+        this.queue = async.queue(({ job }: { job: ITransactionWorkerJob }, cb) => {
             delay(1)
                 .then(() => {
                     try {
@@ -46,10 +45,8 @@ export class PoolWorker {
         return Observable.from(this.results);
     }
 
-    public createJob(job: ITransactionWorkerJob): string {
-        const ticketId: string = uuidv4();
-        this.queue.push({ job: { ...job, ticketId } });
-        return ticketId;
+    public createJob(job: ITransactionWorkerJob): void {
+        this.queue.push({ job });
     }
 
     public configure(options: any): void {
@@ -62,7 +59,7 @@ export class PoolWorker {
         Managers.configManager.setHeight(height);
     }
 
-    private async processTransactions(job: IQueuedTransactionJob, cb: any): Promise<void> {
+    private async processTransactions(job: ITransactionWorkerJob, cb: any): Promise<void> {
         const { transactions, senderWallets } = job;
 
         const result: IPendingTransactionJobResult = {

@@ -6,6 +6,7 @@ import assert from "assert";
 import async from "async";
 import { delay } from 'bluebird';
 import pluralize from "pluralize";
+import uuidv4 from "uuid/v4";
 import { dynamicFeeMatcher } from "./dynamic-fee";
 import { IDynamicFeeMatch } from "./interfaces";
 import { WalletManager } from "./wallet-manager";
@@ -20,6 +21,7 @@ export class Processor {
     }
 
     private cachedTransactionIds: Map<string, boolean> = new Map();
+    private partialTickets: Map<string, IPendingTransactionJobResult> = new Map();
     private pendingTickets: Map<string, boolean> = new Map();
     private processedTickets: Map<string, TransactionPool.IFinishedTransactionJobResult> = new Map();
 
@@ -71,6 +73,16 @@ export class Processor {
 
     public async createTransactionsJob(transactions: Interfaces.ITransactionData[]): Promise<string> {
         const eligibleTransactions: Interfaces.ITransactionData[] = [];
+        const partialPendingJobResult: IPendingTransactionJobResult = {
+            ticketId: "",
+            invalid: {},
+            excess: {},
+            errors: {},
+            accept: {},
+            broadcast: {},
+            validTransactions: [],
+        };
+
         const senderWallets: Record<string, State.IWallet> = {};
         for (const transaction of transactions) {
             if (this.cachedTransactionIds.has(transaction.id)) {
@@ -80,7 +92,7 @@ export class Processor {
             this.cachedTransactionIds.set(transaction.id, true);
 
             // TODO: optimize
-            if (!(await this.preWorkerChecks(transaction))) {
+            if (!await this.preWorkerChecks(transaction, partialPendingJobResult)) {
                 continue;
             }
 
@@ -90,12 +102,27 @@ export class Processor {
             eligibleTransactions.push(transaction);
         }
 
-        const ticketId: string = await this.poolBroker.createJob({
-            transactions: eligibleTransactions,
-            senderWallets,
-        });
+        const ticketId: string = uuidv4();
+        partialPendingJobResult.ticketId = ticketId;
 
-        this.pendingTickets.set(ticketId, true);
+        if (eligibleTransactions.length === 0) {
+            this.writeResult(partialPendingJobResult, []);
+
+        } else {
+            this.pendingTickets.set(ticketId, true);
+
+            // If the payload contained some invalid transactions store them temporary
+            // and merge them into the result once the job finishes.
+            if (Object.keys(partialPendingJobResult.errors).length > 0 || Object.keys(partialPendingJobResult.excess).length > 0) {
+                this.partialTickets.set(ticketId, undefined);
+            }
+
+            await this.poolBroker.createJob({
+                ticketId,
+                transactions: eligibleTransactions,
+                senderWallets,
+            });
+        }
 
         return ticketId;
     }
@@ -125,16 +152,22 @@ export class Processor {
         return cb();
     }
 
-    private async preWorkerChecks(transaction: Interfaces.ITransactionData): Promise<boolean> {
+    private async preWorkerChecks(transaction: Interfaces.ITransactionData, jobResult: IPendingTransactionJobResult): Promise<boolean> {
         try {
 
             if (await this.pool.has(transaction.id)) {
+                pushError(jobResult, transaction.id, {
+                    type: "ERR_DUPLICATE",
+                    message: `Duplicate transaction ${transaction.id}`
+                });
+
                 return false;
             }
 
-            //  if (await this.pool.hasExceededMaxTransactions(transaction.senderPublicKey)) {
-            //      return false;
-            //  }
+            // if (await this.pool.hasExceededMaxTransactions(transaction.senderPublicKey)) {
+            //   jobResult.excess[transaction.id] = true;
+            //  return false;
+            // }
 
             const handler: Handlers.TransactionHandler = Handlers.Registry.get(transaction.type, transaction.typeGroup);
 
@@ -144,7 +177,12 @@ export class Processor {
 
             return true;
 
-        } catch {
+        } catch (error) {
+            pushError(jobResult, transaction.id, {
+                type: "ERR_UNKNOWN",
+                message: error.message
+            });
+
             return false;
         }
     }
@@ -248,6 +286,19 @@ export class Processor {
             errors: Object.keys(pendingJob.errors).length > 0 ? pendingJob.errors : undefined,
         }
 
+        const partialResult: IPendingTransactionJobResult = this.partialTickets.get(jobResult.ticketId);
+        if (partialResult !== undefined) {
+            jobResult.invalid = {
+                ...jobResult.invalid,
+                ...Object.keys(partialResult.invalid),
+            };
+
+            // TODO: merge errors too
+
+            jobResult.excess = Object.keys(partialResult.excess);
+        }
+
+        this.partialTickets.delete(jobResult.ticketId);
         this.pendingTickets.delete(jobResult.ticketId);
         this.processedTickets.set(jobResult.ticketId, jobResult);
 
