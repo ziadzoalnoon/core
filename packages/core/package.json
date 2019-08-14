@@ -90,6 +90,7 @@
         "prompts": "^2.1.0",
         "read-last-lines": "^1.7.1",
         "semver": "^6.2.0",
+        "simple-git": "^1.113.0",
         "wif": "^2.0.6"
     },
     "devDependencies": {

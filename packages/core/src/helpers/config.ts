@@ -20,6 +20,10 @@ class ConfigManager {
         this.update({ [key]: value });
     }
 
+    public has(key: string): boolean {
+        return !!this.get(key);
+    }
+
     public update(data: Record<string, string>): void {
         this.write({ ...this.read(), ...data });
     }
@@ -33,7 +37,20 @@ class ConfigManager {
             this.write({
                 token: this.config.bin,
                 channel: getRegistryChannel(this.config),
+                updateMethod: "npm",
             });
+        }
+
+        if (!this.has("token")) {
+            this.set("token", this.config.bin);
+        }
+
+        if (!this.has("channel")) {
+            this.set("channel", getRegistryChannel(this.config));
+        }
+
+        if (!this.has("updateMethod")) {
+            this.set("updateMethod", "npm");
         }
     }
 

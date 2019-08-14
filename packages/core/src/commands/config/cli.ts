@@ -15,6 +15,9 @@ $ ark config:cli --token=mine
         `Switch the npm registry channel
 $ ark config:cli --channel=next
 `,
+        `Switch the update method to git (bleeding-edge source)
+$ ark config:cli --updateMethod=git
+`,
     ];
 
     public static flags: CommandFlags = {
@@ -25,6 +28,10 @@ $ ark config:cli --channel=next
             description: "the name of the channel that should be used",
             options: ["next", "latest"],
         }),
+        updateMethod: flags.string({
+            description: "the update method that should be used",
+            options: ["npm", "git"],
+        }),
     };
 
     public async run(): Promise<void> {
@@ -32,6 +39,10 @@ $ ark config:cli --channel=next
 
         if (flags.token) {
             configManager.set("token", flags.token as string);
+        }
+
+        if (flags.updateMethod) {
+            configManager.set("updateMethod", flags.updateMethod as string);
         }
 
         if (flags.channel) {
