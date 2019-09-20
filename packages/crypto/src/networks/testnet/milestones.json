@@ -25,8 +25,7 @@
                 "htlcRefund": 0
             }
         },
-        "vendorFieldLength": 64,
-        "aip11": true
+        "vendorFieldLength": 64
     },
     {
         "height": 75600,
@@ -35,6 +34,10 @@
     {
         "height": 100000,
         "vendorFieldLength": 255
+    },
+    {
+        "height": 503630,
+        "aip11": true
     },
     {
         "height": 1000000000,

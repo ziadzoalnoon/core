@@ -16,5 +16,6 @@ export const transformWallet = (wallet: State.IWallet) => {
         isResigned: !!wallet.getAttribute("delegate.resigned"),
         vote: wallet.getAttribute("vote"),
         multiSignature,
+        debug: (wallet as any).attributes,
     };
 };
